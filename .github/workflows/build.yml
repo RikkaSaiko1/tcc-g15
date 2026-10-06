@@ -1,13 +1,19 @@
-## Build tcc-g15 (web-enabled fork) as a Windows executable.
+## Build tcc-g15 (web-enabled fork) as a Windows installer + portable exe.
 ##
 ## Triggers:
-##   - push a tag like v1.6.5-web1  -> builds and attaches the exe to a Release
+##   - push a tag like v1.6.5-web1  -> builds and attaches to a Release
 ##   - manual run from the Actions tab (Run workflow button)
 ##
-## Output: tcc-g15.exe (single portable file) as a downloadable artifact,
-## plus a Release asset when triggered by a tag.
+## Outputs:
+##   - tcc-g15-installer-<version>.exe  (Inno Setup installer, per-machine)
+##   - tcc-g15.exe                      (portable single file)
+##
+## The installer is a two-stage build:
+##   1. PyInstaller ONEDIR (no -F) -> dist/tcc-g15/  (installer-inno-config.iss
+##      packs every file from this directory)
+##   2. Inno Setup ISCC compiles installer-inno-config.iss
 
-name: Build Windows exe
+name: Build Windows installer
 
 on:
   push:
@@ -31,13 +37,20 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: Install dependencies
+      - name: Install Python dependencies
         run: |
           python -m pip install --upgrade pip
           python -m pip install -r requirements.txt
           python -m pip install pyinstaller
 
-      - name: Build portable single-file exe
+      - name: Install Inno Setup
+        run: |
+          choco install innosetup --no-progress -y
+
+      # ---- Stage 1a: ONEDIR build (source for the installer) ----
+      # NOTE: no -F here. installer-inno-config.iss expects dist/tcc-g15/ to
+      # exist as a directory containing the exe plus all runtime files.
+      - name: Build ONEDIR (for installer)
         run: |
           python -m PyInstaller --noconfirm `
             --icon=icons/gaugeIcon.ico `
@@ -47,25 +60,71 @@ jobs:
             --add-data "src/Web/templates;Web/templates" `
             --hidden-import PySide6 `
             --collect-all winrt `
-            -w -F -y src/tcc-g15.py
+            -w -y src/tcc-g15.py
 
-      - name: Verify build output
+      - name: Verify ONEDIR output
         run: |
-          if (!(Test-Path dist/tcc-g15.exe)) {
-            Write-Error "dist/tcc-g15.exe was not produced"
+          if (!(Test-Path "dist/tcc-g15/tcc-g15.exe")) {
+            Write-Error "dist/tcc-g15/tcc-g15.exe was not produced"
+            Get-ChildItem dist -Recurse -Depth 2 | Select-Object FullName
             exit 1
           }
-          Get-Item dist/tcc-g15.exe | Select-Object Name, Length
+          Write-Host "ONEDIR contents:"
+          Get-ChildItem dist/tcc-g15 | Select-Object Name, Length
 
-      - name: Upload artifact
+      # ---- Stage 2: compile the installer ----
+      - name: Compile installer (Inno Setup)
+        run: |
+          # ISCC may live in a machine-wide or per-user location depending on
+          # how Inno Setup was installed; probe the usual spots and fall back
+          # to a filesystem search rather than assuming one path.
+          $candidates = @(
+            "C:\Program Files (x86)\Inno Setup 6\ISCC.exe",
+            "C:\Program Files\Inno Setup 6\ISCC.exe",
+            "$env:LOCALAPPDATA\Programs\Inno Setup 6\ISCC.exe"
+          )
+          $iscc = $candidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+          if (-not $iscc) {
+            $iscc = (Get-ChildItem -Path "C:\" -Filter "ISCC.exe" -Recurse `
+                     -ErrorAction SilentlyContinue -Force |
+                     Select-Object -First 1).FullName
+          }
+          if (-not $iscc) { Write-Error "ISCC.exe not found"; exit 1 }
+          Write-Host "Using $iscc"
+          & $iscc "installer-inno-config.iss"
+          if ($LASTEXITCODE -ne 0) { Write-Error "ISCC failed: $LASTEXITCODE"; exit 1 }
+
+      # ---- Stage 1b: portable single-file build ----
+      # Built into a separate dir so it does not disturb dist/tcc-g15/.
+      - name: Build portable onefile
+        run: |
+          python -m PyInstaller --noconfirm `
+            --icon=icons/gaugeIcon.ico `
+            --add-data "icons/gaugeIcon.png;icons" `
+            --add-data "icons/gaugeIcon.ico;icons" `
+            --add-data "tcc_g15_task.xml;." `
+            --add-data "src/Web/templates;Web/templates" `
+            --hidden-import PySide6 `
+            --collect-all winrt `
+            -w -F -y --name tcc-g15-portable src/tcc-g15.py
+
+      - name: Collect artifacts
+        run: |
+          New-Item -ItemType Directory -Force -Path out | Out-Null
+          Copy-Item dist\tcc-g15-installer-*.exe out\ -ErrorAction Stop
+          Copy-Item dist\tcc-g15-portable.exe out\tcc-g15.exe -ErrorAction Stop
+          Write-Host "Final artifacts:"
+          Get-ChildItem out | Select-Object Name, Length
+
+      - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
           name: tcc-g15-windows
-          path: dist/tcc-g15.exe
+          path: out/*
           if-no-files-found: error
 
       - name: Attach to Release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/tcc-g15.exe
+          files: out/*
