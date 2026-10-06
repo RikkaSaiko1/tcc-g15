@@ -2,6 +2,7 @@ from typing import Callable, Optional, Tuple
 from PySide6 import QtCore, QtWidgets
 from GUI.QGauge import QGauge
 from GUI.AppColors import Colors
+from GUI.i18n import tr
 
 class ThermalUnitWidget(QtWidgets.QWidget):
     def __init__(self, parent: Optional[QtWidgets.QWidget], tempMinMax: Tuple[int,int], tempColorLimits: Optional[Tuple[int,int]], fanMinMax: Tuple[int,int], sliderMaxAndTick: Tuple[int,int]):
@@ -12,7 +13,7 @@ class ThermalUnitWidget(QtWidgets.QWidget):
         self._subTitle = QtWidgets.QLabel(self)
         self._subTitle.hide()
         self._subTitle.setTextInteractionFlags(QtCore.Qt.TextSelectableByMouse)
-        self._subTitle.setToolTip("Triple left-click and Crtl+C to copy")
+        self._subTitle.setToolTip(tr("widget.copy_hint"))
 
         self._tempBar, _tempBarLabel = self._makeGaugeWithLabel(tempMinMax, ' °C', tempColorLimits)
 
@@ -23,7 +24,7 @@ class ThermalUnitWidget(QtWidgets.QWidget):
         self._speedSlider.setMaximum(sliderMaxAndTick[0])
         self._speedSlider.setTickInterval(sliderMaxAndTick[1])
         self._speedSlider.setTickPosition(QtWidgets.QSlider.TicksBelow)
-        _speedSliderLabel = QtWidgets.QLabel("Fan Speed")
+        self._speedSliderLabel = QtWidgets.QLabel(tr("widget.fan_speed"))
         self._speedSliderDebounce = QtCore.QTimer()
         self._speedSliderDebounce.setInterval(500)
         self._speedSliderDebounce.setSingleShot(True)
@@ -38,7 +39,7 @@ class ThermalUnitWidget(QtWidgets.QWidget):
         grid.addWidget(self._fanBar,        3, 0, QtCore.Qt.AlignTop)
         grid.addWidget(_fanBarLabel,        3, 1, QtCore.Qt.AlignLeft)
         grid.addWidget(self._speedSlider,   4, 0, QtCore.Qt.AlignTop)
-        grid.addWidget(_speedSliderLabel,   4, 1, QtCore.Qt.AlignLeft)
+        grid.addWidget(self._speedSliderLabel, 4, 1, QtCore.Qt.AlignLeft)
         grid.setColumnStretch(0, 1)
         grid.setColumnStretch(1, 0)
         self.setLayout(grid)

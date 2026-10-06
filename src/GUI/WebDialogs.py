@@ -7,6 +7,7 @@ from typing import Optional
 from PySide6 import QtCore, QtWidgets
 
 from GUI.Settings import SettingsKey, WEBHOOK_DEFAULTS, WEB_DEFAULTS, setting_bool, setting_str, setting_int, setting_float
+from GUI.i18n import tr
 
 
 def _replace_webhook_variables(template: str, values: dict) -> str:
@@ -29,55 +30,69 @@ class WebhookDialog(QtWidgets.QDialog):
     # 信号定义
     testComplete = QtCore.Signal(int, str)
 
-    # 灵敏度预设：(window_size, sigma)
-    SENSITIVITY_PRESETS = {
-        "Low": (8, 2.5),
-        "Medium": (5, 2.0),
-        "High": (3, 1.5),
+    # Sensitivity presets keyed by a STABLE id (not the display text, which
+    # changes with the language): id -> (window_size, sigma)
+    SENSITIVITY_IDS = {
+        "low": (8, 2.5),
+        "medium": (5, 2.0),
+        "high": (3, 1.5),
     }
-    # 发送频率预设：(base_interval, max_interval)
-    FREQUENCY_PRESETS = {
-        "Immediate (30s max 2min)": (30, 120),
-        "Moderate (1min max 5min)": (60, 300),
-        "Conservative (2min max 10min)": (120, 600),
+    SENSITIVITY_LABEL_KEYS = {
+        "low": "wh.preset.low",
+        "medium": "wh.preset.medium",
+        "high": "wh.preset.high",
+    }
+    SENSITIVITY_HINT_KEYS = {
+        "low": "wh.hint.detect_low",
+        "medium": "wh.hint.detect_medium",
+        "high": "wh.hint.detect_high",
+    }
+
+    # Frequency presets: id -> (base_interval, max_interval)
+    FREQUENCY_IDS = {
+        "immediate": (30, 120),
+        "moderate": (60, 300),
+        "conservative": (120, 600),
+    }
+    FREQUENCY_LABEL_KEYS = {
+        "immediate": "wh.preset.immediate",
+        "moderate": "wh.preset.moderate",
+        "conservative": "wh.preset.conservative",
     }
 
     def __init__(self, parent, settings, webhook_status=None):
         super().__init__(parent)
         self.settings = settings
         self.webhook_status = webhook_status or {}
-        self.setWindowTitle("Webhook Alert Settings")
+        self.setWindowTitle(tr("wh.title"))
         self.setMinimumWidth(500)
 
         layout = QtWidgets.QVBoxLayout(self)
 
         # 功能说明
-        descLabel = QtWidgets.QLabel(
-            "Send HTTP notifications when fan speed exceeds threshold.\n"
-            "Configure when to trigger and how often to alert."
-        )
+        descLabel = QtWidgets.QLabel(tr("wh.desc"))
         descLabel.setStyleSheet("color: #666; font-size: 11px; margin-bottom: 10px;")
         descLabel.setWordWrap(True)
         layout.addWidget(descLabel)
 
         # 启用开关
-        self.enableCB = QtWidgets.QCheckBox("Enable Webhook Alert")
+        self.enableCB = QtWidgets.QCheckBox(tr("wh.enable"))
         layout.addWidget(self.enableCB)
 
         # URL 输入
         urlLayout = QtWidgets.QHBoxLayout()
-        urlLayout.addWidget(QtWidgets.QLabel("Webhook URL:"))
+        urlLayout.addWidget(QtWidgets.QLabel(tr("wh.url")))
         self.urlEdit = QtWidgets.QLineEdit()
         self.urlEdit.setPlaceholderText("https://your-webhook-url.com/endpoint")
         urlLayout.addWidget(self.urlEdit)
         layout.addLayout(urlLayout)
 
         # 模式过滤
-        filterGroup = QtWidgets.QGroupBox("Mode Filter (only alert in selected modes)")
+        filterGroup = QtWidgets.QGroupBox(tr("wh.mode_filter"))
         filterLayout = QtWidgets.QHBoxLayout(filterGroup)
-        self.filterBalancedCB = QtWidgets.QCheckBox("Balanced")
-        self.filterGModeCB = QtWidgets.QCheckBox("G-Mode")
-        self.filterCustomCB = QtWidgets.QCheckBox("Custom")
+        self.filterBalancedCB = QtWidgets.QCheckBox(tr("mode.Balanced"))
+        self.filterGModeCB = QtWidgets.QCheckBox(tr("mode.G_Mode"))
+        self.filterCustomCB = QtWidgets.QCheckBox(tr("mode.Custom"))
         self.filterBalancedCB.setChecked(True)
         self.filterGModeCB.setChecked(True)
         self.filterCustomCB.setChecked(True)
@@ -87,34 +102,36 @@ class WebhookDialog(QtWidgets.QDialog):
         layout.addWidget(filterGroup)
 
         # 阈值设置
-        thresholdGroup = QtWidgets.QGroupBox("Threshold Settings")
+        thresholdGroup = QtWidgets.QGroupBox(tr("wh.thresholds"))
         thresholdLayout = QtWidgets.QFormLayout(thresholdGroup)
 
         self.gpuThresholdSpin = QtWidgets.QSpinBox()
         self.gpuThresholdSpin.setRange(1000, 6000)
         self.gpuThresholdSpin.setSuffix(" RPM")
-        thresholdLayout.addRow("GPU RPM Threshold:", self.gpuThresholdSpin)
+        thresholdLayout.addRow(tr("wh.gpu_threshold"), self.gpuThresholdSpin)
 
         self.cpuThresholdSpin = QtWidgets.QSpinBox()
         self.cpuThresholdSpin.setRange(1000, 6000)
         self.cpuThresholdSpin.setSuffix(" RPM")
-        thresholdLayout.addRow("CPU RPM Threshold:", self.cpuThresholdSpin)
+        thresholdLayout.addRow(tr("wh.cpu_threshold"), self.cpuThresholdSpin)
 
         layout.addWidget(thresholdGroup)
 
         # 行为设置（人性化选项）
-        behaviorGroup = QtWidgets.QGroupBox("Alert Behavior")
+        behaviorGroup = QtWidgets.QGroupBox(tr("wh.behavior"))
         behaviorLayout = QtWidgets.QFormLayout(behaviorGroup)
 
         self.sensitivityCombo = QtWidgets.QComboBox()
-        self.sensitivityCombo.addItems(list(self.SENSITIVITY_PRESETS.keys()))
-        self.sensitivityCombo.setToolTip("Low = less sensitive, fewer false alarms\nMedium = balanced\nHigh = more sensitive, faster detection")
-        behaviorLayout.addRow("Sensitivity:", self.sensitivityCombo)
+        for sid in self.SENSITIVITY_IDS:
+            self.sensitivityCombo.addItem(tr(self.SENSITIVITY_LABEL_KEYS[sid]), sid)
+        self.sensitivityCombo.setToolTip(tr("wh.sensitivity_tip"))
+        behaviorLayout.addRow(tr("wh.sensitivity"), self.sensitivityCombo)
 
         self.frequencyCombo = QtWidgets.QComboBox()
-        self.frequencyCombo.addItems(list(self.FREQUENCY_PRESETS.keys()))
-        self.frequencyCombo.setToolTip("How often to send alerts when threshold is exceeded")
-        behaviorLayout.addRow("Alert Frequency:", self.frequencyCombo)
+        for fid in self.FREQUENCY_IDS:
+            self.frequencyCombo.addItem(tr(self.FREQUENCY_LABEL_KEYS[fid]), fid)
+        self.frequencyCombo.setToolTip(tr("wh.frequency_tip"))
+        behaviorLayout.addRow(tr("wh.frequency"), self.frequencyCombo)
 
         # 动态说明标签
         self.behaviorHint = QtWidgets.QLabel()
@@ -123,21 +140,13 @@ class WebhookDialog(QtWidgets.QDialog):
         behaviorLayout.addRow(self.behaviorHint)
 
         def updateBehaviorHint():
-            s = self.sensitivityCombo.currentText()
-            f = self.frequencyCombo.currentText()
-            ws, _ = self.SENSITIVITY_PRESETS[s]
-            sDesc = {
-                "Low": f"Averages {ws} readings, ignores brief spikes",
-                "Medium": f"Averages {ws} readings, balanced response",
-                "High": f"Averages {ws} readings, reacts quickly to changes"
-            }
-            base, max_ = self.FREQUENCY_PRESETS[f]
-            fDesc = {
-                "Immediate (30s max 2min)": f"First alert after {base}s, then every {base*2}s, {base*4}s... up to {max_}s",
-                "Moderate (1min max 5min)": f"First alert after {base}s, then every {base*2}s, {base*4}s... up to {max_}s",
-                "Conservative (2min max 10min)": f"First alert after {base}s, then every {base*2}s, {base*4}s... up to {max_}s"
-            }
-            self.behaviorHint.setText(f"Detection: {sDesc.get(s, '')}\nAlerts: {fDesc.get(f, '')}")
+            sid = self.sensitivityCombo.currentData()
+            fid = self.frequencyCombo.currentData()
+            ws, _ = self.SENSITIVITY_IDS[sid]
+            sDesc = tr(self.SENSITIVITY_HINT_KEYS[sid], w=ws)
+            base, max_ = self.FREQUENCY_IDS[fid]
+            fDesc = tr("wh.hint.freq", base=base, b2=base * 2, b4=base * 4, max=max_)
+            self.behaviorHint.setText(tr("wh.hint.combined", detect=sDesc, alerts=fDesc))
 
         self.sensitivityCombo.currentIndexChanged.connect(updateBehaviorHint)
         self.frequencyCombo.currentIndexChanged.connect(updateBehaviorHint)
@@ -146,22 +155,24 @@ class WebhookDialog(QtWidgets.QDialog):
         layout.addWidget(behaviorGroup)
 
         # Body 模板
-        bodyGroup = QtWidgets.QGroupBox("Request Body (JSON Template)")
+        bodyGroup = QtWidgets.QGroupBox(tr("wh.body"))
         bodyLayout = QtWidgets.QVBoxLayout(bodyGroup)
 
         # 模板选择
         templateLayout = QtWidgets.QHBoxLayout()
-        templateLayout.addWidget(QtWidgets.QLabel("Template:"))
+        templateLayout.addWidget(QtWidgets.QLabel(tr("wh.template")))
         self.templateCombo = QtWidgets.QComboBox()
-        self.templateCombo.addItems([
-            "Custom",
-            "Default",
-            "WeChat Work (企业微信)",
-            "Feishu (飞书)",
-            "DingTalk (钉钉)",
-            "Slack",
-            "Discord",
-        ])
+        # item data carries a stable template id; the text is translated.
+        for tid, key in (
+            ("custom", "wh.tpl.custom"),
+            ("default", "wh.tpl.default"),
+            ("wecom", "wh.tpl.wecom"),
+            ("feishu", "wh.tpl.feishu"),
+            ("dingtalk", "wh.tpl.dingtalk"),
+            ("slack", "wh.tpl.slack"),
+            ("discord", "wh.tpl.discord"),
+        ):
+            self.templateCombo.addItem(tr(key), tid)
         templateLayout.addWidget(self.templateCombo)
         templateLayout.addStretch()
         bodyLayout.addLayout(templateLayout)
@@ -171,45 +182,47 @@ class WebhookDialog(QtWidgets.QDialog):
         self.bodyEdit.setPlaceholderText('{"text": "Alert: {alert_message}", "gpu_rpm": {gpu_rpm}}')
         bodyLayout.addWidget(self.bodyEdit)
 
-        # 模板定义（URL 示例 + Body）
+        # 模板定义（URL 示例 + Body），键为稳定的模板 id
+        def _alert_text(prefix_key: str, gpu_label_key: str, cpu_label_key: str) -> str:
+            return tr(prefix_key) + "\\n{alert_message}\\nGPU: {gpu_rpm} RPM, CPU: {cpu_rpm} RPM\\n" \
+                + tr(gpu_label_key) + ": {gpu_temp}°C, " + tr(cpu_label_key) + ": {cpu_temp}°C"
+
         self._templates = {
-            "Default": {
+            "default": {
                 "url": "https://your-webhook-url.com/endpoint",
                 "body": WEBHOOK_DEFAULTS["body"],
             },
-            "WeChat Work (企业微信)": {
+            "wecom": {
                 "url": "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=YOUR_KEY",
-                "body": '{"msgtype": "text", "text": {"content": "[TCC-G15] 风扇速度告警\\n{alert_message}\\nGPU: {gpu_rpm} RPM, CPU: {cpu_rpm} RPM\\nGPU温度: {gpu_temp}°C, CPU温度: {cpu_temp}°C"}}',
+                "body": '{"msgtype": "text", "text": {"content": "' + _alert_text("wh.tpl.alert_prefix", "wh.tpl.gpu_temp_label", "wh.tpl.cpu_temp_label") + '"}}',
             },
-            "Feishu (飞书)": {
+            "feishu": {
                 "url": "https://open.feishu.cn/open-apis/bot/v2/hook/YOUR_HOOK",
-                "body": '{"msg_type": "text", "content": {"text": "[TCC-G15] 风扇速度告警\\n{alert_message}\\nGPU: {gpu_rpm} RPM, CPU: {cpu_rpm} RPM\\nGPU温度: {gpu_temp}°C, CPU温度: {cpu_temp}°C"}}',
+                "body": '{"msg_type": "text", "content": {"text": "' + _alert_text("wh.tpl.alert_prefix", "wh.tpl.gpu_temp_label", "wh.tpl.cpu_temp_label") + '"}}',
             },
-            "DingTalk (钉钉)": {
+            "dingtalk": {
                 "url": "https://oapi.dingtalk.com/robot/send?access_token=YOUR_TOKEN",
-                "body": '{"msgtype": "text", "text": {"content": "[TCC-G15] 风扇速度告警\\n{alert_message}\\nGPU: {gpu_rpm} RPM, CPU: {cpu_rpm} RPM\\nGPU温度: {gpu_temp}°C, CPU温度: {cpu_temp}°C"}}',
+                "body": '{"msgtype": "text", "text": {"content": "' + _alert_text("wh.tpl.alert_prefix", "wh.tpl.gpu_temp_label", "wh.tpl.cpu_temp_label") + '"}}',
             },
-            "Slack": {
+            "slack": {
                 "url": "https://hooks.slack.com/services/YOUR/WEBHOOK/URL",
-                "body": '{"text": "[TCC-G15] 风扇速度告警\\n{alert_message}\\nGPU: {gpu_rpm} RPM, CPU: {cpu_rpm} RPM\\nGPU温度: {gpu_temp}°C, CPU温度: {cpu_temp}°C"}',
+                "body": '{"text": "' + _alert_text("wh.tpl.alert_prefix", "wh.tpl.gpu_temp_label", "wh.tpl.cpu_temp_label") + '"}',
             },
-            "Discord": {
+            "discord": {
                 "url": "https://discord.com/api/webhooks/YOUR/WEBHOOK",
-                "body": '{"content": "[TCC-G15] 风扇速度告警\\n{alert_message}\\nGPU: {gpu_rpm} RPM, CPU: {cpu_rpm} RPM\\nGPU温度: {gpu_temp}°C, CPU温度: {cpu_temp}°C"}',
+                "body": '{"content": "' + _alert_text("wh.tpl.alert_prefix", "wh.tpl.gpu_temp_label", "wh.tpl.cpu_temp_label") + '"}',
             },
         }
 
         def onTemplateChange():
-            template = self.templateCombo.currentText()
+            template = self.templateCombo.currentData()
             if template in self._templates:
                 self.bodyEdit.setPlainText(self._templates[template]["body"])
                 self.urlEdit.setText(self._templates[template]["url"])
 
         self.templateCombo.currentIndexChanged.connect(onTemplateChange)
 
-        helpLabel = QtWidgets.QLabel(
-            "Variables: {alert_message}, {gpu_rpm}, {cpu_rpm}, {gpu_temp}, {cpu_temp}, {gpu_rpm_threshold}, {cpu_rpm_threshold}"
-        )
+        helpLabel = QtWidgets.QLabel(tr("wh.variables"))
         helpLabel.setStyleSheet("color: grey; font-size: 10px;")
         helpLabel.setWordWrap(True)
         bodyLayout.addWidget(helpLabel)
@@ -217,22 +230,22 @@ class WebhookDialog(QtWidgets.QDialog):
         layout.addWidget(bodyGroup)
 
         # 状态信息
-        statusGroup = QtWidgets.QGroupBox("Status")
+        statusGroup = QtWidgets.QGroupBox(tr("wh.status"))
         statusLayout = QtWidgets.QFormLayout(statusGroup)
 
-        self.lastTriggerLabel = QtWidgets.QLabel("Never")
-        statusLayout.addRow("Last Triggered:", self.lastTriggerLabel)
+        self.lastTriggerLabel = QtWidgets.QLabel(tr("wh.never"))
+        statusLayout.addRow(tr("wh.last_triggered"), self.lastTriggerLabel)
 
         self.alertCountLabel = QtWidgets.QLabel("0")
-        statusLayout.addRow("Total Alerts Sent:", self.alertCountLabel)
+        statusLayout.addRow(tr("wh.alert_count"), self.alertCountLabel)
 
         layout.addWidget(statusGroup)
 
         # 按钮行
         buttonLayout = QtWidgets.QHBoxLayout()
 
-        self.testBtn = QtWidgets.QPushButton("Test Send")
-        self.testBtn.setToolTip("Send a test webhook to verify your configuration")
+        self.testBtn = QtWidgets.QPushButton(tr("wh.test_send"))
+        self.testBtn.setToolTip(tr("wh.test_send_tip"))
         self.testBtn.clicked.connect(self._testSend)
         self.testComplete.connect(self._onTestComplete)
         buttonLayout.addWidget(self.testBtn)
@@ -240,6 +253,8 @@ class WebhookDialog(QtWidgets.QDialog):
         buttonLayout.addStretch()
 
         buttonBox = QtWidgets.QDialogButtonBox(QtWidgets.QDialogButtonBox.Ok | QtWidgets.QDialogButtonBox.Cancel)
+        buttonBox.button(QtWidgets.QDialogButtonBox.Ok).setText(tr("wh.save"))
+        buttonBox.button(QtWidgets.QDialogButtonBox.Cancel).setText(tr("wh.cancel"))
         buttonBox.accepted.connect(self.accept)
         buttonBox.rejected.connect(self.reject)
         buttonLayout.addWidget(buttonBox)
@@ -251,11 +266,11 @@ class WebhookDialog(QtWidgets.QDialog):
 
     def _onTestComplete(self, status, error):
         self.testBtn.setEnabled(True)
-        self.testBtn.setText("Test Send")
+        self.testBtn.setText(tr("wh.test_send"))
         if status:
-            QtWidgets.QMessageBox.information(self, "Test Successful", f"Webhook sent successfully!\nHTTP Status: {status}")
+            QtWidgets.QMessageBox.information(self, tr("wh.test_ok_title"), tr("wh.test_ok_body", status=status))
         else:
-            QtWidgets.QMessageBox.warning(self, "Test Failed", f"Failed to send webhook:\n{error}")
+            QtWidgets.QMessageBox.warning(self, tr("wh.test_fail_title"), tr("wh.test_fail_body", error=error))
 
     def _testSend(self):
         """发送测试 webhook"""
@@ -263,11 +278,11 @@ class WebhookDialog(QtWidgets.QDialog):
         body = self.bodyEdit.toPlainText().strip()
 
         if not url:
-            QtWidgets.QMessageBox.warning(self, "Test Failed", "Please enter a Webhook URL first.")
+            QtWidgets.QMessageBox.warning(self, tr("wh.test_fail_title"), tr("wh.need_url"))
             return
 
         if not body:
-            QtWidgets.QMessageBox.warning(self, "Test Failed", "Please enter a Request Body first.")
+            QtWidgets.QMessageBox.warning(self, tr("wh.test_fail_title"), tr("wh.need_body"))
             return
 
         # 替换变量为测试值
@@ -284,7 +299,7 @@ class WebhookDialog(QtWidgets.QDialog):
         try:
             json.loads(testBody)
         except json.JSONDecodeError as e:
-            QtWidgets.QMessageBox.warning(self, "Test Failed", f"Invalid JSON body:\n{e}")
+            QtWidgets.QMessageBox.warning(self, tr("wh.test_fail_title"), tr("wh.bad_json", error=e))
             return
 
         def _doRequest():
@@ -302,7 +317,7 @@ class WebhookDialog(QtWidgets.QDialog):
 
         # 在后台线程执行
         self.testBtn.setEnabled(False)
-        self.testBtn.setText("Sending...")
+        self.testBtn.setText(tr("wh.sending"))
 
         def _doTest():
             status, error = _doRequest()
@@ -325,33 +340,38 @@ class WebhookDialog(QtWidgets.QDialog):
         self.filterCustomCB.setChecked(setting_bool(self.settings, SettingsKey.WebhookFilterCustom.value, WEBHOOK_DEFAULTS["filter_custom"]))
 
         # 匹配模板
-        matchedTemplate = "Custom"
-        for name, tmpl in self._templates.items():
+        matchedTemplate = "custom"
+        for tid, tmpl in self._templates.items():
             if savedBody.strip() == tmpl["body"].strip():
-                matchedTemplate = name
+                matchedTemplate = tid
                 break
         self.templateCombo.blockSignals(True)
-        self.templateCombo.setCurrentText(matchedTemplate)
+        idx = self.templateCombo.findData(matchedTemplate)
+        self.templateCombo.setCurrentIndex(idx if idx >= 0 else 0)
         self.templateCombo.blockSignals(False)
 
         # 加载灵敏度预设
         savedSigma = setting_float(self.settings, SettingsKey.WebhookSigma.value, WEBHOOK_DEFAULTS["sigma"])
-        sensitivity = "Medium"
-        for name, (_, sigma) in self.SENSITIVITY_PRESETS.items():
+        sensitivity = "medium"
+        for sid, (_, sigma) in self.SENSITIVITY_IDS.items():
             if abs(sigma - savedSigma) < 0.01:
-                sensitivity = name
+                sensitivity = sid
                 break
-        self.sensitivityCombo.setCurrentText(sensitivity)
+        sIdx = self.sensitivityCombo.findData(sensitivity)
+        if sIdx >= 0:
+            self.sensitivityCombo.setCurrentIndex(sIdx)
 
         # 加载频率预设
         savedBase = setting_int(self.settings, SettingsKey.WebhookBaseInterval.value, WEBHOOK_DEFAULTS["base_interval"])
         savedMax = setting_int(self.settings, SettingsKey.WebhookMaxInterval.value, WEBHOOK_DEFAULTS["max_interval"])
-        frequency = "Immediate (30s max 2min)"
-        for name, (base, max_) in self.FREQUENCY_PRESETS.items():
+        frequency = "immediate"
+        for fid, (base, max_) in self.FREQUENCY_IDS.items():
             if base == savedBase and max_ == savedMax:
-                frequency = name
+                frequency = fid
                 break
-        self.frequencyCombo.setCurrentText(frequency)
+        fIdx = self.frequencyCombo.findData(frequency)
+        if fIdx >= 0:
+            self.frequencyCombo.setCurrentIndex(fIdx)
 
         # 加载状态信息
         lastTrigger = self.webhook_status.get('last_trigger_time', 0)
@@ -360,12 +380,12 @@ class WebhookDialog(QtWidgets.QDialog):
             triggerTime = datetime.datetime.fromtimestamp(lastTrigger).strftime("%Y-%m-%d %H:%M:%S")
             self.lastTriggerLabel.setText(triggerTime)
         else:
-            self.lastTriggerLabel.setText("Never")
+            self.lastTriggerLabel.setText(tr("wh.never"))
         self.alertCountLabel.setText(str(alertCount))
 
     def getSettings(self):
-        window_size, sigma = self.SENSITIVITY_PRESETS[self.sensitivityCombo.currentText()]
-        base_interval, max_interval = self.FREQUENCY_PRESETS[self.frequencyCombo.currentText()]
+        window_size, sigma = self.SENSITIVITY_IDS[self.sensitivityCombo.currentData()]
+        base_interval, max_interval = self.FREQUENCY_IDS[self.frequencyCombo.currentData()]
         return {
             'enabled': self.enableCB.isChecked(),
             'url': self.urlEdit.text().strip(),
@@ -387,59 +407,64 @@ class WebServerDialog(QtWidgets.QDialog):
     def __init__(self, parent, settings):
         super().__init__(parent)
         self.settings = settings
-        self.setWindowTitle("Web Server Settings")
+        self.setWindowTitle(tr("ws.title"))
         self.setMinimumWidth(450)
 
         layout = QtWidgets.QVBoxLayout(self)
 
         # 功能说明
-        descLabel = QtWidgets.QLabel(
-            "Embedded web server for remote monitoring and control.\n"
-            "Access the dashboard from any device on your network."
-        )
+        descLabel = QtWidgets.QLabel(tr("ws.desc"))
         descLabel.setStyleSheet("color: #666; font-size: 11px; margin-bottom: 10px;")
         descLabel.setWordWrap(True)
         layout.addWidget(descLabel)
 
         # 启用开关
-        self.enableCB = QtWidgets.QCheckBox("Enable Web Server")
+        self.enableCB = QtWidgets.QCheckBox(tr("ws.enable"))
         layout.addWidget(self.enableCB)
 
         # 网络设置
-        networkGroup = QtWidgets.QGroupBox("Network Settings")
+        networkGroup = QtWidgets.QGroupBox(tr("ws.network"))
         networkLayout = QtWidgets.QFormLayout(networkGroup)
 
         self.portSpin = QtWidgets.QSpinBox()
         self.portSpin.setRange(1024, 65535)
-        networkLayout.addRow("Port:", self.portSpin)
+        networkLayout.addRow(tr("ws.port"), self.portSpin)
 
         self.bindEdit = QtWidgets.QLineEdit()
         self.bindEdit.setPlaceholderText("0.0.0.0")
-        self.bindEdit.setToolTip("0.0.0.0 = all interfaces, or specific IP like 192.168.1.100")
-        networkLayout.addRow("Bind Address:", self.bindEdit)
+        self.bindEdit.setToolTip(tr("ws.bind_tip"))
+        networkLayout.addRow(tr("ws.bind"), self.bindEdit)
 
         layout.addWidget(networkGroup)
 
         # 认证设置
-        authGroup = QtWidgets.QGroupBox("Authentication")
+        authGroup = QtWidgets.QGroupBox(tr("ws.auth_group"))
         authLayout = QtWidgets.QFormLayout(authGroup)
 
-        self.authEnableCB = QtWidgets.QCheckBox("Enable Authentication")
+        self.authEnableCB = QtWidgets.QCheckBox(tr("ws.auth"))
         authLayout.addRow(self.authEnableCB)
 
         self.userEdit = QtWidgets.QLineEdit()
         self.userEdit.setPlaceholderText("admin")
-        authLayout.addRow("Username:", self.userEdit)
+        authLayout.addRow(tr("ws.user"), self.userEdit)
 
         self.passEdit = QtWidgets.QLineEdit()
         self.passEdit.setEchoMode(QtWidgets.QLineEdit.Password)
         self.passEdit.setPlaceholderText("password")
-        authLayout.addRow("Password:", self.passEdit)
+        authLayout.addRow(tr("ws.pass"), self.passEdit)
 
         layout.addWidget(authGroup)
 
+        # Security reminder — this port controls fans, so a warning is warranted.
+        noteLabel = QtWidgets.QLabel(tr("ws.security_note"))
+        noteLabel.setStyleSheet("color: #b58900; font-size: 10px;")
+        noteLabel.setWordWrap(True)
+        layout.addWidget(noteLabel)
+
         # 按钮
         buttonBox = QtWidgets.QDialogButtonBox(QtWidgets.QDialogButtonBox.Ok | QtWidgets.QDialogButtonBox.Cancel)
+        buttonBox.button(QtWidgets.QDialogButtonBox.Ok).setText(tr("ws.save"))
+        buttonBox.button(QtWidgets.QDialogButtonBox.Cancel).setText(tr("ws.cancel"))
         buttonBox.accepted.connect(self.accept)
         buttonBox.rejected.connect(self.reject)
         layout.addWidget(buttonBox)

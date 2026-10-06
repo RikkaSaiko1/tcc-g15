@@ -75,16 +75,21 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
 .proc-bar.cpu{background:#1A6497}
 .proc-bar.mem{background:#f1c232}
 .proc-empty{text-align:center;padding:40px;color:#555;font-size:14px}
+.lang-btn{background:#333;border:1px solid #444;color:#ccc;border-radius:4px;padding:4px 12px;font-size:12px;cursor:pointer;transition:all .15s}
+.lang-btn:hover{background:#1A6497;border-color:#1A6497;color:#fff}
 </style>
 </head>
 <body>
 <div class="header">
-  <h1>TCC-G15 Web Monitor</h1>
-  <div><span class="status-dot off" id="statusDot"></span><span id="statusText" style="font-size:13px;color:#888">Connecting...</span></div>
+  <h1 data-i18n="web.title">TCC-G15 Web Monitor</h1>
+  <div style="display:flex;align-items:center;gap:12px">
+    <button id="langBtn" class="lang-btn" onclick="toggleLanguage()" title="Switch language / 切换语言">中文</button>
+    <div><span class="status-dot off" id="statusDot"></span><span id="statusText" style="font-size:13px;color:#888">Connecting...</span></div>
+  </div>
 </div>
 <div class="tabs">
-  <button class="tab-btn active" onclick="switchTab('dashboard')">Dashboard</button>
-  <button class="tab-btn" onclick="switchTab('processes')">Processes</button>
+  <button class="tab-btn active" onclick="switchTab('dashboard')" data-i18n="web.dashboard">Dashboard</button>
+  <button class="tab-btn" onclick="switchTab('processes')" data-i18n="web.processes">Processes</button>
 </div>
 <div class="tab-panel active" id="tab-dashboard">
 <div class="container">
@@ -92,42 +97,42 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
     <div class="card">
       <h2>GPU</h2>
       <div class="metric">
-        <div class="metric-label">Temperature</div>
+        <div class="metric-label" data-i18n="web.temperature">Temperature</div>
         <div class="metric-bar"><div class="metric-fill color-green" id="gpuTempBar" style="width:0%"></div><div class="metric-value" id="gpuTempVal">-- °C</div></div>
       </div>
       <div class="metric">
-        <div class="metric-label">Fan Speed</div>
+        <div class="metric-label" data-i18n="web.fan_speed">Fan Speed</div>
         <div class="metric-bar"><div class="metric-fill color-green" id="gpuRpmBar" style="width:0%"></div><div class="metric-value" id="gpuRpmVal">-- RPM</div></div>
       </div>
     </div>
     <div class="card">
       <h2>CPU</h2>
       <div class="metric">
-        <div class="metric-label">Temperature</div>
+        <div class="metric-label" data-i18n="web.temperature">Temperature</div>
         <div class="metric-bar"><div class="metric-fill color-green" id="cpuTempBar" style="width:0%"></div><div class="metric-value" id="cpuTempVal">-- °C</div></div>
       </div>
       <div class="metric">
-        <div class="metric-label">Fan Speed</div>
+        <div class="metric-label" data-i18n="web.fan_speed">Fan Speed</div>
         <div class="metric-bar"><div class="metric-fill color-green" id="cpuRpmBar" style="width:0%"></div><div class="metric-value" id="cpuRpmVal">-- RPM</div></div>
       </div>
     </div>
   </div>
 
   <div class="controls">
-    <h2>Controls</h2>
+    <h2 data-i18n="web.controls">Controls</h2>
     <div class="mode-btns">
-      <button class="mode-btn" data-mode="Balanced" onclick="setMode('Balanced')">Balanced</button>
-      <button class="mode-btn" data-mode="G_Mode" onclick="setMode('G_Mode')">G-Mode</button>
-      <button class="mode-btn" data-mode="Custom" onclick="setMode('Custom')">Custom</button>
+      <button class="mode-btn" data-mode="Balanced" onclick="setMode('Balanced')" data-i18n="mode.Balanced">Balanced</button>
+      <button class="mode-btn" data-mode="G_Mode" onclick="setMode('G_Mode')" data-i18n="mode.G_Mode">G-Mode</button>
+      <button class="mode-btn" data-mode="Custom" onclick="setMode('Custom')" data-i18n="mode.Custom">Custom</button>
     </div>
     <div class="fan-control">
       <div class="fan-row disabled" id="gpuFanRow">
-        <label>GPU Fan</label>
+        <label data-i18n="web.gpu_fan">GPU Fan</label>
         <input type="range" min="0" max="120" value="0" id="gpuFanSlider" oninput="onFanSlider()">
         <span class="fan-val" id="gpuFanVal">0</span>
       </div>
       <div class="fan-row disabled" id="cpuFanRow">
-        <label>CPU Fan</label>
+        <label data-i18n="web.cpu_fan">CPU Fan</label>
         <input type="range" min="0" max="120" value="0" id="cpuFanSlider" oninput="onFanSlider()">
         <span class="fan-val" id="cpuFanVal">0</span>
       </div>
@@ -135,7 +140,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
   </div>
 
   <div class="chart-card">
-    <h2>Temperature History <div class="chart-btns"><button class="chart-btn active" data-range="3600" onclick="setChartRange(3600,this)">1H</button><button class="chart-btn" data-range="21600" onclick="setChartRange(21600,this)">6H</button><button class="chart-btn" data-range="86400" onclick="setChartRange(86400,this)">24H</button></div></h2>
+    <h2><span data-i18n="web.temp_history">Temperature History</span> <div class="chart-btns"><button class="chart-btn active" data-range="3600" onclick="setChartRange(3600,this)">1H</button><button class="chart-btn" data-range="21600" onclick="setChartRange(21600,this)">6H</button><button class="chart-btn" data-range="86400" onclick="setChartRange(86400,this)">24H</button></div></h2>
     <div class="chart-wrap"><canvas id="tempChart"></canvas></div>
   </div>
 
@@ -146,12 +151,12 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
 <div class="tab-panel" id="tab-processes">
 <div class="container">
   <div class="proc-toolbar">
-    <label>Sort by:</label>
+    <label data-i18n="web.sort_by">Sort by:</label>
     <select id="procSort" onchange="onProcParamChange()">
-      <option value="cpu">CPU %</option>
-      <option value="memory">Memory %</option>
+      <option value="cpu" data-i18n="web.cpu_pct">CPU %</option>
+      <option value="memory" data-i18n="web.memory_pct">Memory %</option>
     </select>
-    <label>Count:</label>
+    <label data-i18n="web.count">Count:</label>
     <input type="number" id="procNum" value="20" min="1" max="100" onchange="onProcParamChange()">
     <span id="procStatus" style="font-size:12px;color:#555"></span>
   </div>
@@ -160,14 +165,14 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
       <thead>
         <tr>
           <th style="width:40px">#</th>
-          <th style="width:60px" data-sort="pid">PID <span class="sort-arrow"></span></th>
-          <th style="width:160px" data-sort="name">Name <span class="sort-arrow"></span></th>
-          <th style="width:90px" data-sort="cpu_percent">CPU % <span class="sort-arrow"></span></th>
-          <th style="width:90px" data-sort="memory_mb">Memory <span class="sort-arrow"></span></th>
-          <th style="width:80px" data-sort="memory_percent">Mem % <span class="sort-arrow"></span></th>
-          <th style="width:60px" data-sort="threads">Threads <span class="sort-arrow"></span></th>
-          <th style="width:150px" data-sort="create_time">Start Time <span class="sort-arrow"></span></th>
-          <th data-sort="exe">Path <span class="sort-arrow"></span></th>
+          <th style="width:60px" data-sort="pid"><span data-i18n="web.pid_full">PID</span> <span class="sort-arrow"></span></th>
+          <th style="width:160px" data-sort="name"><span data-i18n="web.name">Name</span> <span class="sort-arrow"></span></th>
+          <th style="width:90px" data-sort="cpu_percent"><span data-i18n="web.cpu_pct">CPU %</span> <span class="sort-arrow"></span></th>
+          <th style="width:90px" data-sort="memory_mb"><span data-i18n="web.memory">Memory</span> <span class="sort-arrow"></span></th>
+          <th style="width:80px" data-sort="memory_percent"><span data-i18n="web.mem_pct">Mem %</span> <span class="sort-arrow"></span></th>
+          <th style="width:60px" data-sort="threads"><span data-i18n="web.threads">Threads</span> <span class="sort-arrow"></span></th>
+          <th style="width:150px" data-sort="create_time"><span data-i18n="web.start_time">Start Time</span> <span class="sort-arrow"></span></th>
+          <th data-sort="exe"><span data-i18n="web.path">Path</span> <span class="sort-arrow"></span></th>
         </tr>
       </thead>
       <tbody id="procBody">
@@ -179,6 +184,56 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
 </div>
 
 <script>
+// --- i18n ---
+// Language defaults to English; the choice persists in localStorage. The
+// dashboard language is independent of the desktop app's setting, since the
+// page may be opened from another device on the network.
+const I18N={
+  en:{'web.title':'TCC-G15 Web Monitor','web.dashboard':'Dashboard','web.processes':'Processes',
+      'web.temperature':'Temperature','web.fan_speed':'Fan Speed','web.controls':'Controls',
+      'web.gpu_fan':'GPU Fan','web.cpu_fan':'CPU Fan','web.temp_history':'Temperature History',
+      'web.sort_by':'Sort by:','web.count':'Count:','web.pid_full':'PID','web.name':'Name',
+      'web.cpu_pct':'CPU %','web.memory':'Memory','web.memory_pct':'Memory %','web.mem_pct':'Mem %','web.threads':'Threads',
+      'web.start_time':'Start Time','web.path':'Path','web.connecting':'Connecting...',
+      'web.connected':'Connected','web.disconnected':'Disconnected',
+      'web.disconnected_retry':'Disconnected — retrying...','web.error':'Error: ',
+      'web.failed':'Failed','web.no_processes':'No processes found','web.render_error':'Render error: ',
+      'web.processes_count':'{n} processes — {time}','web.lang_btn':'中文',
+      'mode.Balanced':'Balanced','mode.G_Mode':'G-Mode','mode.Custom':'Custom'},
+  zh:{'web.title':'TCC-G15 网页监控','web.dashboard':'仪表盘','web.processes':'进程',
+      'web.temperature':'温度','web.fan_speed':'风扇转速','web.controls':'控制',
+      'web.gpu_fan':'GPU 风扇','web.cpu_fan':'CPU 风扇','web.temp_history':'温度历史',
+      'web.sort_by':'排序:','web.count':'数量:','web.pid_full':'PID','web.name':'名称',
+      'web.cpu_pct':'CPU %','web.memory':'内存','web.memory_pct':'内存 %','web.mem_pct':'内存 %','web.threads':'线程',
+      'web.start_time':'启动时间','web.path':'路径','web.connecting':'连接中...',
+      'web.connected':'已连接','web.disconnected':'已断开',
+      'web.disconnected_retry':'已断开 — 正在重连...','web.error':'错误: ',
+      'web.failed':'失败','web.no_processes':'未找到进程','web.render_error':'渲染错误: ',
+      'web.processes_count':'{n} 个进程 — {time}','web.lang_btn':'English',
+      'mode.Balanced':'均衡模式','mode.G_Mode':'G 模式','mode.Custom':'自定义'}
+};
+let LANG=localStorage.getItem('tcc_g15_lang')||'en';
+function t(key,vars){
+  const s=(I18N[LANG]&&I18N[LANG][key])||(I18N.en[key])||key;
+  if(!vars)return s;
+  return s.replace(/\{(\w+)\}/g,(m,k)=>(vars[k]!==undefined?vars[k]:m));
+}
+function applyLanguage(){
+  document.querySelectorAll('[data-i18n]').forEach(el=>{el.textContent=t(el.getAttribute('data-i18n'))});
+  const btn=document.getElementById('langBtn');
+  if(btn)btn.textContent=t('web.lang_btn');
+  document.documentElement.lang=(LANG==='zh'?'zh-CN':'en');
+  document.title=t('web.title');
+  if(typeof chart!=='undefined'&&chart&&chart.data&&chart.data.datasets){
+    chart.data.datasets[0].label='GPU';chart.data.datasets[1].label='CPU';chart.update();
+  }
+}
+function toggleLanguage(){
+  LANG=(LANG==='zh'?'en':'zh');
+  localStorage.setItem('tcc_g15_lang',LANG);
+  applyLanguage();
+}
+
 // --- IndexedDB ---
 const DB_NAME='TCC_G15_History',DB_STORE='temps',DB_VER=1;
 let db=null;
@@ -187,6 +242,8 @@ async function dbAdd(ts,gpu,cpu){if(!db)return;const tx=db.transaction(DB_STORE,
 async function dbGetRange(since){if(!db)return[];return new Promise(r=>{const tx=db.transaction(DB_STORE,'readonly');const rq=tx.objectStore(DB_STORE).getAll(IDBKeyRange.lowerBound(since));rq.onsuccess=()=>r(rq.result);rq.onerror=()=>r([])})}
 async function dbClearOld(maxAgeMs){if(!db)return;const cutoff=Date.now()-maxAgeMs;const tx=db.transaction(DB_STORE,'readwrite');const store=tx.objectStore(DB_STORE);const rq=store.openCursor();rq.onsuccess=e=>{const c=e.target.result;if(!c)return;if(c.key<cutoff)c.delete().onsuccess=()=>c.continue();else c.continue()}}
 openDB();
+// Apply the saved language on first paint (defaults to English).
+applyLanguage();
 
 // --- Chart ---
 const ctx=document.getElementById('tempChart').getContext('2d');
@@ -217,7 +274,7 @@ function connectStatusStream(){
       const d=JSON.parse(e.data);
       statusConnected=true;
       document.getElementById('statusDot').className='status-dot on';
-      document.getElementById('statusText').textContent='Connected';
+      document.getElementById('statusText').textContent=t("web.connected");
       updateUI(d);
       dbAdd(Date.now(),d.gpu_temp,d.cpu_temp);
       if(++pollCount%5===0){dbClearOld(86400000*2);updateChart()}
@@ -226,7 +283,7 @@ function connectStatusStream(){
   evtSource.onerror=function(){
     statusConnected=false;
     document.getElementById('statusDot').className='status-dot off';
-    document.getElementById('statusText').textContent='Disconnected';
+    document.getElementById('statusText').textContent=t("web.disconnected");
   };
 }
 connectStatusStream();
@@ -322,18 +379,18 @@ function startProcStream(){
   const sortBy=document.getElementById('procSort').value;
   const num=document.getElementById('procNum').value;
   const statusEl=document.getElementById('procStatus');
-  statusEl.textContent='Connecting...';
+  statusEl.textContent=t("web.connecting");
   procEvtSource=new EventSource('/api/processes/stream?type='+encodeURIComponent(sortBy)+'&num='+encodeURIComponent(num));
   procEvtSource.onmessage=function(e){
     try{
       const data=JSON.parse(e.data);
-      if(!data.ok){statusEl.textContent='Error: '+(data.error||'Failed');return}
+      if(!data.ok){statusEl.textContent=t("web.error")+(data.error||t("web.failed"));return}
       renderProcesses(data.processes);
-      statusEl.textContent=data.processes.length+' processes — '+new Date().toLocaleTimeString();
+      statusEl.textContent=t("web.processes_count",{n:data.processes.length,time:new Date().toLocaleTimeString()});
     }catch(err){console.error('proc SSE parse error:',err)}
   };
   procEvtSource.onerror=function(){
-    statusEl.textContent='Disconnected — retrying...';
+    statusEl.textContent=t("web.disconnected_retry");
   };
 }
 
@@ -354,7 +411,7 @@ function renderProcesses(procs){
     const data=sortCol?doSort(lastProcData,sortCol,sortAsc):lastProcData;
     if(!data||data.length===0){
       body.innerHTML='';
-      empty.textContent='No processes found';
+      empty.textContent=t("web.no_processes");
       empty.style.display='block';
       return;
     }
@@ -381,7 +438,7 @@ function renderProcesses(procs){
     updateSortArrows();
   }catch(e){
     console.error('renderProcesses error:',e);
-    document.getElementById('procStatus').textContent='Render error: '+e.message;
+    document.getElementById("procStatus").textContent=t("web.render_error")+e.message;
   }
 }
 

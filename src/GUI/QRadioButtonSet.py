@@ -32,6 +32,12 @@ class QRadioButtonSet(QtWidgets.QWidget):
     def setChecked(self, value: str):
         self._buttons[value].setChecked(True)
 
+    def setButtonText(self, value: str, text: str) -> None:
+        """Update a button's label (used when the language changes at runtime)."""
+        btn = self._buttons.get(value)
+        if btn is not None:
+            btn.setText(text)
+
     def getChecked(self) -> Optional[str]:
         for rb in self._buttons.values():
             if rb.isChecked():

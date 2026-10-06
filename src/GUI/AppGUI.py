@@ -17,6 +17,8 @@ from Web.WebBridge import WebBridge
 from Web.WebServer import ThreadedHTTPServer
 from GUI.Settings import SettingsKey, WEBHOOK_DEFAULTS, WEB_DEFAULTS, setting_bool, setting_str, setting_int, setting_float
 from GUI.WebDialogs import WebhookDialog, WebServerDialog, _replace_webhook_variables
+from GUI import i18n
+from GUI.i18n import tr, Language, LANGUAGE_NAMES, language_from_setting
 
 
 GUI_ICON = 'icons/gaugeIcon.png'
@@ -86,6 +88,12 @@ class ThermalMode(Enum):
     G_Mode = 'G_Mode'
     Custom = 'Custom'
 
+
+def mode_display_name(mode) -> str:
+    """Localized, human-readable name for a ThermalMode (or its raw value)."""
+    raw = mode.value if isinstance(mode, ThermalMode) else str(mode)
+    return tr(f"mode.{raw}")
+
 def errorExit(message: str, message2: Optional[str] = None) -> None:
     if not QtWidgets.QApplication.instance():
          QtWidgets.QApplication([])
@@ -153,44 +161,49 @@ class TCC_GUI(QtWidgets.QWidget):
         self.settings = QtCore.QSettings(self.APP_URL, "AWCC")
         print(f'Settings location: {self.settings.fileName()}')
 
+        # Apply the persisted language BEFORE any widget text is created, so
+        # the whole first paint is already in the right language.
+        i18n.set_language(language_from_setting(
+            self.settings.value(i18n.LANGUAGE_SETTING_KEY)))
+
         # Set main window props
         self.setFixedSize(600, 0)
         self.setWindowFlags(QtCore.Qt.Window | QtCore.Qt.WindowMinimizeButtonHint | QtCore.Qt.WindowCloseButtonHint)
         self.setWindowIcon(QtGui.QIcon(resourcePath(GUI_ICON)))
         self.mouseReleaseEvent = lambda evt: (
             evt.button() == QtCore.Qt.RightButton and
-            alert("About", f"{self.APP_NAME} v{self.APP_VERSION}", message2 = f"{self.APP_DESCRIPTION}\n{self.APP_URL}")
+            alert(tr("dlg.about"), f"{self.APP_NAME} v{self.APP_VERSION}", message2 = f"{self.APP_DESCRIPTION}\n{self.APP_URL}")
         )
 
         # Set up tray icon
         self.trayIcon = QGaugeTrayIcon((self.GPU_COLOR_LIMITS, self.CPU_COLOR_LIMITS))
         menu = QtWidgets.QMenu()
         # Mode switch
-        menu.addSection("Mode")
+        menu.addSection(tr("menu.mode"))
         self._trayMenuModeSwitch = {} # Dict[ThermalMode, QtWidgets.QAction]
         for m in ThermalMode:
             modeAction = menu.addAction("-")
             modeAction.triggered.connect(lambda _, m_value=m.value: self._modeSwitch.setChecked(m_value))
             self._trayMenuModeSwitch[m.value] = modeAction
         # Settings
-        menu.addSection("Settings")
-        showAction = menu.addAction("Show")
+        menu.addSection(tr("menu.settings"))
+        showAction = menu.addAction(tr("menu.show"))
         showAction.triggered.connect(self.showNormal)
-        addToAutorunAction = menu.addAction("Enable autorun")
+        addToAutorunAction = menu.addAction(tr("menu.enable_autorun"))
         def autorunTaskRun(action: Literal['add', 'remove']) -> None:
             err = autorunTask(action)
             if err != 0 and action == 'add':
-                alert("Error", f"Failed to {action} autorun task. Error={err}", QtWidgets.QMessageBox.Icon.Critical)
+                alert(tr("dlg.error"), tr("dlg.autorun_failed", action=action, err=err), QtWidgets.QMessageBox.Icon.Critical)
             else:
-                alert("Success", f"Autorun on system startup {'Enabled' if action == 'add' else 'Disabled'}")
+                alert(tr("dlg.success"), tr("dlg.autorun_enabled") if action == 'add' else tr("dlg.autorun_disabled"))
             # When in minimized state, a wired bug causes the app to close if we won't touch some of the `self.show*()` methods
             if self.isMinimized():
                 self.showMinimized()
                 self.hide()
         addToAutorunAction.triggered.connect(lambda: autorunTaskRun('add'))
-        removeFromAutorunAction = menu.addAction("Disable autorun")
+        removeFromAutorunAction = menu.addAction(tr("menu.disable_autorun"))
         removeFromAutorunAction.triggered.connect(lambda: autorunTaskRun('remove'))
-        restoreAction = menu.addAction("Restore Default")
+        restoreAction = menu.addAction(tr("menu.restore_default"))
         restoreAction.triggered.connect(self.clearAppSettings)
         # Setup tray widget
         tray = QtWidgets.QSystemTrayIcon(self)
@@ -221,24 +234,47 @@ class TCC_GUI(QtWidgets.QWidget):
         self._webPort = self._webConfig["web_port"]
 
         # Web Server 单行（状态显示 + 点击进入设置）
-        self._webServerAction = menu.addAction("  Web Server: Disabled")
+        self._webServerAction = menu.addAction(tr("menu.web_server_disabled"))
         self._webServerAction.triggered.connect(self._showWebServerSettings)
 
         # --- Webhook Alert ---
-        self._webhookAction = menu.addAction("  Webhook: Disabled")
+        self._webhookAction = menu.addAction(tr("menu.webhook_disabled"))
         self._webhookAction.triggered.connect(self._showWebhookSettings)
+
+        # --- Language switcher ---
+        # Default is English; picking 中文 applies immediately and persists.
+        langMenu = menu.addMenu(tr("menu.language"))
+        self._langGroup = QtGui.QActionGroup(self)
+        self._langGroup.setExclusive(True)
+        self._langActions = {}
+        for lang in Language:
+            act = langMenu.addAction(LANGUAGE_NAMES[lang])
+            act.setCheckable(True)
+            act.setChecked(lang == i18n.get_language())
+            act.triggered.connect(lambda _, l=lang: self._onLanguageSelected(l))
+            self._langGroup.addAction(act)
+            self._langActions[lang] = act
 
         # Exit at the bottom
         menu.addSeparator()
-        exitAction = menu.addAction("Exit")
+        exitAction = menu.addAction(tr("menu.exit"))
         exitAction.triggered.connect(self.onExit)
+
+        # Remember the static actions so a runtime language change can retranslate them.
+        self._staticMenuActions = [
+            (showAction, "menu.show"),
+            (addToAutorunAction, "menu.enable_autorun"),
+            (removeFromAutorunAction, "menu.disable_autorun"),
+            (restoreAction, "menu.restore_default"),
+            (exitAction, "menu.exit"),
+        ]
 
         if self._webConfig["web_enabled"]:
             self._startWebServer()
 
         # Set up GUI
         self.setObjectName('QMainWindow')
-        self.setWindowTitle(self.APP_NAME)
+        self.setWindowTitle(tr("app.name"))
 
         self._thermalGPU = ThermalUnitWidget(self, tempMinMax= (0, 95), tempColorLimits= self.GPU_COLOR_LIMITS, fanMinMax= (0, 5500), sliderMaxAndTick= (120, 20))
         self._thermalGPU.setTitle('GPU')
@@ -272,31 +308,33 @@ class TCC_GUI(QtWidgets.QWidget):
         lTherm.addWidget(self._thermalGPU)
         lTherm.addWidget(self._thermalCPU)
 
-        self._modeSwitch = QRadioButtonSet(None, None, list(map(lambda m: (m.name.replace('_', ' '), m.value), ThermalMode)))
+        self._modeSwitch = QRadioButtonSet(None, None, list(map(lambda m: (mode_display_name(m), m.value), ThermalMode)))
 
         # Fail-safe indicator
-        failsafeIndicator = QtWidgets.QLabel()
+        self._failsafeIndicator = QtWidgets.QLabel()
         def updFailsafeIndicator() -> None:
             color = Colors.GREEN.value if self._failsafeOn else Colors.DARK_GREY.value
-            msg = "Normal"
+            msg = tr("main.normal")
             if self._failsafeTempIsHighTs > 0: # Fail-safe have tripped at some point in the past
                 color = Colors.YELLOW.value
                 timeStr = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(self._failsafeTempIsHighTs))
-                msg = f"Last high temp at {timeStr}"
+                msg = tr("main.last_high_temp", time=timeStr)
                 if self._failsafeTrippedPrevModeStr is not None: # Fail-safe is in tripped state now
                     color = Colors.RED.value
 
-            failsafeIndicator.setStyleSheet(f"QLabel {{ min-height: 14px; min-width: 14px; max-height: 14px; max-width: 14px; border: 1px solid {Colors.GREY.value}; border-radius: 7px; background: {color}; }}")
-            failsafeIndicator.setToolTip(msg)
+            self._failsafeIndicator.setStyleSheet(f"QLabel {{ min-height: 14px; min-width: 14px; max-height: 14px; max-width: 14px; border: 1px solid {Colors.GREY.value}; border-radius: 7px; background: {color}; }}")
+            self._failsafeIndicator.setToolTip(msg)
+        failsafeIndicator = self._failsafeIndicator
+        self._updFailsafeIndicator = updFailsafeIndicator
         updFailsafeIndicator()
 
         # Fail-safe temp limits
         self._limitTempGPU = QtWidgets.QComboBox()
         self._limitTempGPU.addItems(list(map(lambda v: str(v), range(50, 91))))
-        self._limitTempGPU.setToolTip("Threshold GPU temp")
+        self._limitTempGPU.setToolTip(tr("main.threshold_gpu"))
         self._limitTempCPU = QtWidgets.QComboBox()
         self._limitTempCPU.addItems(list(map(lambda v: str(v), range(50, 101))))
-        self._limitTempCPU.setToolTip("Threshold CPU temp")
+        self._limitTempCPU.setToolTip(tr("main.threshold_cpu"))
         def onLimitGPUChange():
             val = self._limitTempGPU.currentText()
             if val.isdigit(): self.FAILSAFE_GPU_TEMP = int(val)
@@ -307,8 +345,10 @@ class TCC_GUI(QtWidgets.QWidget):
         self._limitTempCPU.currentIndexChanged.connect(onLimitCPUChange)
 
         # Fail-safe checkbox
-        self._failsafeCB = QtWidgets.QCheckBox("Fail-safe")
-        self._failsafeCB.setToolTip(f"Switch to G-mode (fans on max) when GPU temp reaches {self.FAILSAFE_GPU_TEMP}°C or CPU reaches {self.FAILSAFE_CPU_TEMP}°C")
+        self._failsafeCB = QtWidgets.QCheckBox(tr("main.failsafe"))
+        self._failsafeCB.setToolTip(
+            tr("main.failsafe_tooltip", gpu=self.FAILSAFE_GPU_TEMP, cpu=self.FAILSAFE_CPU_TEMP)
+        )
         def onFailsafeCB():
             self._failsafeOn = self._failsafeCB.isChecked()
             self._failsafeTempIsHighTs = 0
@@ -375,7 +415,7 @@ class TCC_GUI(QtWidgets.QWidget):
                 self._failsafeTrippedPrevModeStr = None # In case the mode was switched manually
             updFailsafeIndicator()
             for m in ThermalMode:
-                self._trayMenuModeSwitch[m.value].setText(f"{'•' if m.value == val else ' '} {m.name.replace('_', ' ')}")
+                self._trayMenuModeSwitch[m.value].setText(f"{'•' if m.value == val else ' '} {mode_display_name(m)}")
 
         self._modeSwitch.setChecked(ThermalMode.Balanced.value)
         onModeChange(ThermalMode.Balanced.value)
@@ -446,8 +486,13 @@ class TCC_GUI(QtWidgets.QWidget):
             self.trayIcon = self.trayIcon.resizeForScreen() or self.trayIcon
             self.trayIcon.update((gpuTemp, cpuTemp), self._modeSwitch.getChecked() == ThermalMode.G_Mode.value)
             tray.setIcon(self.trayIcon)
-            webInfo = f"\nWeb:    http://{ThreadedHTTPServer.get_lan_ip()}:{self._webPort}" if self._webServer else ""
-            tray.setToolTip(f"GPU:    {gpuTemp} °C    {gpuRPM} RPM\nCPU:    {cpuTemp} °C    {cpuRPM} RPM\nMode:    {self._modeSwitch.getChecked().replace('_', ' ')}{webInfo}")
+            webInfo = "\n" + tr("tray.web_line", ip=ThreadedHTTPServer.get_lan_ip(), port=self._webPort) if self._webServer else ""
+            tray.setToolTip(
+                tr("tray.gpu_line", temp=gpuTemp, rpm=gpuRPM) + "\n"
+                + tr("tray.cpu_line", temp=cpuTemp, rpm=cpuRPM) + "\n"
+                + tr("tray.mode_line", mode=mode_display_name(self._modeSwitch.getChecked()))
+                + f"{webInfo}"
+            )
 
             self._webBridge.update(
                 gpu_temp=gpuTemp, gpu_rpm=gpuRPM,
@@ -492,9 +537,9 @@ class TCC_GUI(QtWidgets.QWidget):
 
     def _updateWebServerStatus(self) -> None:
         if self._webServer is not None:
-            self._webServerAction.setText(f"• Web Server: {self._webPort}")
+            self._webServerAction.setText(tr("menu.web_server_running", port=self._webPort))
         else:
-            self._webServerAction.setText("  Web Server: Disabled")
+            self._webServerAction.setText(tr("menu.web_server_disabled"))
 
     def _startWebServer(self) -> None:
         if self._webServer is not None:
@@ -512,7 +557,7 @@ class TCC_GUI(QtWidgets.QWidget):
             ip = ThreadedHTTPServer.get_lan_ip()
             # 注意：不写 QSettings —— 偏好只在 _showWebServerSettings 中保存。
             self._updateWebServerStatus()
-            self._tray.setToolTip(f"Web: http://{ip}:{self._webPort}")
+            self._tray.setToolTip(tr("tray.web_line", ip=ip, port=self._webPort))
             print(f"Web server started: http://{ip}:{self._webPort}")
         else:
             self._webServer.stop()
@@ -590,12 +635,12 @@ class TCC_GUI(QtWidgets.QWidget):
         self._toasterMessageCurrentMode()
 
     def _toasterMessageCurrentMode(self, source: Optional[Literal['failsafe']] = None) -> None:
-        sourceStr = f" [Fail-safe]" if source == 'failsafe' else ""
+        sourceStr = f" [{tr('main.failsafe')}]" if source == 'failsafe' else ""
         self.toasterMessage(
             [
-                self._modeSwitch.getChecked().replace('_', ' '),
+                mode_display_name(self._modeSwitch.getChecked()),
                 f"GPU: {self._thermalGPU.getTemp()}°C, CPU: {self._thermalCPU.getTemp()}°C",
-                "Thermal mode changed" + sourceStr
+                tr("toast.mode_changed") + sourceStr
             ],
             source != 'failsafe'
         )
@@ -786,9 +831,9 @@ class TCC_GUI(QtWidgets.QWidget):
 
     def _updateWebhookStatus(self):
         if self._webhookEnabled:
-            self._webhookAction.setText("• Webhook: Enabled")
+            self._webhookAction.setText(tr("menu.webhook_enabled"))
         else:
-            self._webhookAction.setText("  Webhook: Disabled")
+            self._webhookAction.setText(tr("menu.webhook_disabled"))
 
     def _saveAppSettings(self):
         curValues = [
@@ -849,6 +894,41 @@ class TCC_GUI(QtWidgets.QWidget):
         self._webConfig["auth_pass"] = setting_str(self.settings, SettingsKey.WebAuthPass.value, WEB_DEFAULTS["auth_pass"])
         self._webPort = self._webConfig["web_port"]
         self._updateWebServerStatus()
+
+    def _onLanguageSelected(self, lang: Language) -> None:
+        """Switch language at runtime and persist the choice.
+
+        Qt does not retranslate a live widget tree for us, so we walk the
+        widgets we control and re-apply their text. Dialogs are constructed
+        on open, so they pick up the new language automatically.
+        """
+        if lang == i18n.get_language():
+            return
+        i18n.set_language(lang)
+        self.settings.setValue(i18n.LANGUAGE_SETTING_KEY, lang.value)
+
+        # Re-apply text on the widgets that are already built.
+        self.setWindowTitle(tr("app.name"))
+        if hasattr(self, "_modeSwitch"):
+            for m in ThermalMode:
+                self._modeSwitch.setButtonText(m.value, mode_display_name(m))
+        self._rebuildTrayMenuTexts()
+        if hasattr(self, "_updFailsafeIndicator"):
+            self._updFailsafeIndicator()
+        if self._failsafeCB is not None:
+            self._failsafeCB.setText(tr("main.failsafe"))
+            self._failsafeCB.setToolTip(
+                tr("main.failsafe_tooltip", gpu=self.FAILSAFE_GPU_TEMP, cpu=self.FAILSAFE_CPU_TEMP)
+            )
+        self._updateWebServerStatus()
+        self._updateWebhookStatus()
+        # The tray tooltip is rebuilt by the periodic update loop on its next
+        # tick, so no explicit refresh is needed here.
+
+    def _rebuildTrayMenuTexts(self) -> None:
+        """Re-apply translated text to the tray menu's static actions."""
+        for act, key in getattr(self, "_staticMenuActions", []):
+            act.setText(tr(key))
 
     def clearAppSettings(self):
         (isYes, _) = confirm("Reset to Default", "Do you want to reset all settings to default?", ("Reset", "Cancel"))
