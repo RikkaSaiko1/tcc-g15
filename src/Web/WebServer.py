@@ -22,6 +22,32 @@ from Web.WebBridge import WebBridge
 # Limit concurrent SSE connections to avoid thread exhaustion
 _SSE_SEMAPHORE = threading.Semaphore(4)
 
+# Process collection is deliberately NOT cached: the dashboard is meant to show
+# what is happening right now, and a full walk of the process table already
+# runs in well under a second. The SSE stream pushes on its own interval, which
+# is the pacing that matters.
+
+# psutil's cpu_percent() needs two samples: it divides CPU time by the elapsed
+# time since the previous call for that process. A freshly constructed Process
+# object therefore always reports 0.0. process_iter() keeps its own Process
+# cache, so priming it once at import time makes later reads return real
+# values instead of a CPU column full of zeros.
+_PROC_ATTRS_CPU = ['pid', 'name', 'memory_info', 'memory_percent', 'cpu_percent']
+
+
+def _prime_cpu_counters() -> None:
+    try:
+        for _ in psutil.process_iter(attrs=_PROC_ATTRS_CPU):
+            pass
+    except Exception:
+        # Priming is best-effort: without it CPU reads stay 0, but the
+        # process list still works.
+        pass
+
+
+# Prime once, in the background so importing this module stays fast.
+threading.Thread(target=_prime_cpu_counters, daemon=True).start()
+
 FAVICON_BYTES: bytes | None = None
 _INDEX_HTML_BYTES: bytes | None = None
 
@@ -70,42 +96,57 @@ _RESP_404 = b'{"ok":false,"error":"Not found"}'
 _RESP_401 = b'{"ok":false,"error":"Unauthorized"}'
 
 
-# Fast scan: only the cheapest attrs. 'exe' and 'username' are expensive on Windows
-# (require per-process system calls) — defer them to pass 2 for top candidates only.
-_PROC_ATTRS_SCAN = ['pid', 'name', 'memory_info', 'memory_percent']
+# 'exe' and 'create_time' are expensive on Windows (per-process system calls)
+# and are fetched in pass 2 for the finalists only. The attribute lists live
+# near the top of this module, next to the CPU priming logic that uses them.
 
 def _collect_processes(sort_by: str = "cpu", num: int = 20) -> list[dict]:
     """Collect top N processes sorted by cpu or memory.
 
-    Strategy:
-    1. Fast scan all processes with cheapest attrs (no exe/status/num_threads)
-    2. Pre-sort by memory, take top candidates; fetch exe+create_time only for them
-    3. Compute cpu_percent + num_threads only for final candidates
+    Strategy: one pass collecting everything that is cheap, then fetch the
+    genuinely expensive attrs (exe, create_time) only for the finalists.
+
+    Note on cpu_percent: it is read via process_iter so psutil's per-process
+    cache is reused; a throwaway Process object would always report 0.0.
     """
-    # Pass 1: fast scan — minimal attrs to reduce per-process system calls
+    # Pass 1: single scan. cpu_percent is included because the walk is the
+    # expensive part — asking for one more attribute costs almost nothing,
+    # whereas a second walk would double the time.
     all_procs = []
-    for p in psutil.process_iter(attrs=_PROC_ATTRS_SCAN):
+    for p in psutil.process_iter(attrs=_PROC_ATTRS_CPU):
         try:
             mem_info = p.info.get('memory_info')
             if mem_info is None:
                 continue
-            mem_mb = round(mem_info.rss / (1024 * 1024), 1)
-            mem_pct = round(p.info.get('memory_percent', 0) or 0, 2)
+            pid = p.info.get('pid', 0)
+            name = p.info.get('name', '') or ''
+            # PID 0 is the System Idle Process. Its cpu_percent is the share of
+            # time the CPU was idle, so it always tops a "busiest first" list
+            # while telling the user nothing useful.
+            if pid == 0:
+                continue
+            cpu = p.info.get('cpu_percent', 0.0) or 0.0
             all_procs.append({
                 "proc": p,
-                "pid": p.info.get('pid', 0),
-                "name": p.info.get('name', '') or '',
-                "memory_mb": mem_mb,
-                "memory_percent": mem_pct,
+                "pid": pid,
+                "name": name,
+                "memory_mb": round(mem_info.rss / (1024 * 1024), 1),
+                "memory_percent": round(p.info.get('memory_percent', 0) or 0, 2),
+                # psutil reports per-core percentages, so a busy process can
+                # exceed 100 on a multi-core machine. Left as-is to match the
+                # original behaviour; the UI renders it as a relative bar.
+                "cpu_percent": round(cpu, 1),
             })
         except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
             continue
 
-    # Pre-sort by memory, take 2x candidates
-    all_procs.sort(key=lambda x: x['memory_percent'], reverse=True)
+    # Pre-sort by the requested key, keeping 2x candidates so the final sort
+    # after enrichment still has room to reorder.
+    key = "cpu_percent" if sort_by == "cpu" else "memory_percent"
+    all_procs.sort(key=lambda x: x[key], reverse=True)
     candidates = all_procs[:num * 2]
 
-    # Pass 2: fetch expensive attrs (exe, create_time) only for candidates
+    # Pass 2: expensive attrs, finalists only.
     for item in candidates:
         p = item['proc']
         try:
@@ -118,18 +159,14 @@ def _collect_processes(sort_by: str = "cpu", num: int = 20) -> list[dict]:
         except (psutil.NoSuchProcess, psutil.AccessDenied):
             item['exe'] = ''
 
-    # Pass 3: cpu_percent + num_threads only for final candidates
+    # Pass 3: num_threads for finalists (cpu_percent already collected).
     for item in candidates:
         p = item.pop('proc')
         try:
-            cpu = p.cpu_percent(interval=0)
-            item['cpu_percent'] = round(cpu, 1)
             item['threads'] = p.num_threads()
         except (psutil.NoSuchProcess, psutil.AccessDenied):
-            item['cpu_percent'] = 0.0
             item['threads'] = 0
 
-    key = "cpu_percent" if sort_by == "cpu" else "memory_percent"
     candidates.sort(key=lambda x: x[key], reverse=True)
     return candidates[:num]
 
@@ -323,6 +360,13 @@ def _create_app(bridge: WebBridge,
             last_heartbeat = start_time
             try:
                 sort_by, num = initial_sort_by, initial_num
+                # A full collection takes a few hundred ms (one handle per
+                # process). Send a placeholder immediately so the table shows
+                # "loading" instead of staying blank until the first scan lands.
+                warm = json.dumps({'ok': True, 'type': sort_by, 'num': num,
+                                   'processes': [], 'loading': True})
+                yield f"data: {warm}\n\n".encode('utf-8')
+
                 while True:
                     if time.time() - start_time > _SSE_MAX_LIFETIME:
                         yield b": lifetime-reached\n\n"
@@ -458,16 +502,71 @@ class ThreadedHTTPServer(threading.Thread):
 
     @staticmethod
     def get_lan_ip() -> str:
+        """Best guess at an address other devices on the LAN can reach.
+
+        The classic trick is to "connect" a UDP socket to a public address and
+        read back the local end — that reports whichever interface the default
+        route uses. That is wrong when a VPN or a virtual adapter (e.g. a
+        benchmark-range 198.18.0.0/15 tunnel) owns the default route: the
+        address shown cannot be reached from a phone on the same Wi-Fi.
+
+        So private LAN addresses (RFC 1918) are preferred, and the routing
+        trick is only a fallback for unusual setups.
+        """
         global _cached_lan_ip
         if _cached_lan_ip is not None:
             return _cached_lan_ip
-        try:
-            with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
-                s.connect(("8.8.8.8", 80))
-                _cached_lan_ip = s.getsockname()[0]
-            return _cached_lan_ip
-        except Exception:
-            return "127.0.0.1"
+
+        def _pick_rfc1918() -> Optional[str]:
+            try:
+                import psutil
+            except ImportError:
+                return None
+            candidates = []
+            try:
+                for iface, addrs in psutil.net_if_addrs().items():
+                    for a in addrs:
+                        if a.family != socket.AF_INET:
+                            continue
+                        ip = a.address
+                        if ip.startswith("127.") or ip.startswith("169.254."):
+                            continue  # loopback / APIPA
+                        try:
+                            octets = [int(x) for x in ip.split(".")]
+                        except ValueError:
+                            continue
+                        if len(octets) != 4:
+                            continue
+                        if (octets[0] == 10
+                                or (octets[0] == 192 and octets[1] == 168)
+                                or (octets[0] == 172 and 16 <= octets[1] <= 31)):
+                            candidates.append((iface, ip))
+            except Exception:
+                return None
+            if not candidates:
+                return None
+            # Prefer a wired interface, then Wi-Fi, over anything else.
+            def rank(item):
+                name = item[0].lower()
+                if "eth" in name or "\u4ee5\u592a" in name:
+                    return 0
+                if "wi-fi" in name or "wlan" in name or "\u65e0\u7ebf" in name:
+                    return 1
+                return 2
+            candidates.sort(key=rank)
+            return candidates[0][1]
+
+        ip = _pick_rfc1918()
+        if not ip:
+            try:
+                with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+                    s.connect(("8.8.8.8", 80))
+                    ip = s.getsockname()[0]
+            except Exception:
+                ip = "127.0.0.1"
+
+        _cached_lan_ip = ip
+        return _cached_lan_ip
 
 
 def _build_index_html() -> str:

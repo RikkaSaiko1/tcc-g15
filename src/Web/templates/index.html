@@ -198,19 +198,21 @@ const I18N={
       'web.connected':'Connected','web.disconnected':'Disconnected',
       'web.disconnected_retry':'Disconnected — retrying...','web.error':'Error: ',
       'web.failed':'Failed','web.no_processes':'No processes found','web.render_error':'Render error: ',
+      'web.loading':'Loading processes…',
       'web.processes_count':'{n} processes — {time}','web.lang_btn':'中文',
       'mode.Balanced':'Balanced','mode.G_Mode':'G-Mode','mode.Custom':'Custom'},
   zh:{'web.title':'TCC-G15 网页监控','web.dashboard':'仪表盘','web.processes':'进程',
       'web.temperature':'温度','web.fan_speed':'风扇转速','web.controls':'控制',
       'web.gpu_fan':'GPU 风扇','web.cpu_fan':'CPU 风扇','web.temp_history':'温度历史',
-      'web.sort_by':'排序:','web.count':'数量:','web.pid_full':'PID','web.name':'名称',
+      'web.sort_by':'排序：','web.count':'数量：','web.pid_full':'PID','web.name':'名称',
       'web.cpu_pct':'CPU %','web.memory':'内存','web.memory_pct':'内存 %','web.mem_pct':'内存 %','web.threads':'线程',
-      'web.start_time':'启动时间','web.path':'路径','web.connecting':'连接中...',
+      'web.start_time':'启动时间','web.path':'路径','web.connecting':'连接中…',
       'web.connected':'已连接','web.disconnected':'已断开',
-      'web.disconnected_retry':'已断开 — 正在重连...','web.error':'错误: ',
-      'web.failed':'失败','web.no_processes':'未找到进程','web.render_error':'渲染错误: ',
+      'web.disconnected_retry':'已断开 — 正在重连…','web.error':'错误：',
+      'web.failed':'失败','web.no_processes':'未找到进程','web.render_error':'渲染错误：',
+      'web.loading':'正在加载进程…',
       'web.processes_count':'{n} 个进程 — {time}','web.lang_btn':'English',
-      'mode.Balanced':'均衡模式','mode.G_Mode':'G 模式','mode.Custom':'自定义'}
+      'mode.Balanced':'均衡模式','mode.G_Mode':'G-模式','mode.Custom':'自定义'}
 };
 let LANG=localStorage.getItem('tcc_g15_lang')||'en';
 function t(key,vars){
@@ -427,6 +429,12 @@ function startProcStream(){
     try{
       const data=JSON.parse(e.data);
       if(!data.ok){statusEl.textContent=t("web.error")+(data.error||t("web.failed"));return}
+      // Server sends an immediate placeholder so the table is never blank
+      // while the first full process scan runs (~1s).
+      if(data.loading){
+        statusEl.textContent=t("web.loading");
+        return;
+      }
       renderProcesses(data.processes);
       statusEl.textContent=t("web.processes_count",{n:data.processes.length,time:new Date().toLocaleTimeString()});
     }catch(err){console.error('proc SSE parse error:',err)}
