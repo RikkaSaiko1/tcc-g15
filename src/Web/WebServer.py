@@ -37,14 +37,27 @@ def _get_favicon_bytes() -> bytes:
     global FAVICON_BYTES
     if FAVICON_BYTES is None:
         import pathlib
+        # Candidate locations: frozen bundle first, then the repo tree.
+        # Note icons/ lives at the REPO ROOT (not under src/), so from
+        # src/Web/WebServer.py we must climb two levels to reach it.
+        candidates = []
         if hasattr(sys, '_MEIPASS'):
-            ico_path = pathlib.Path(sys._MEIPASS) / "icons" / "gaugeIcon.ico"
-        else:
-            ico_path = pathlib.Path(__file__).resolve().parent.parent / "icons" / "gaugeIcon.ico"
-        try:
-            FAVICON_BYTES = ico_path.read_bytes()
-        except OSError:
-            FAVICON_BYTES = b""
+            candidates.append(pathlib.Path(sys._MEIPASS) / "icons" / "gaugeIcon.ico")
+        _here = pathlib.Path(__file__).resolve()
+        candidates.append(_here.parent.parent.parent / "icons" / "gaugeIcon.ico")  # repo root
+        candidates.append(_here.parent.parent / "icons" / "gaugeIcon.ico")
+
+        FAVICON_BYTES = b""
+        for ico_path in candidates:
+            try:
+                FAVICON_BYTES = ico_path.read_bytes()
+                break
+            except OSError:
+                continue
+        if not FAVICON_BYTES:
+            logging.getLogger(__name__).warning(
+                "favicon not found; tried: %s", [str(c) for c in candidates]
+            )
     return FAVICON_BYTES
 
 

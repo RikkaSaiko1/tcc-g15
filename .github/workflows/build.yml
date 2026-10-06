@@ -1,0 +1,71 @@
+## Build tcc-g15 (web-enabled fork) as a Windows executable.
+##
+## Triggers:
+##   - push a tag like v1.6.5-web1  -> builds and attaches the exe to a Release
+##   - manual run from the Actions tab (Run workflow button)
+##
+## Output: tcc-g15.exe (single portable file) as a downloadable artifact,
+## plus a Release asset when triggered by a tag.
+
+name: Build Windows exe
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+          python -m pip install pyinstaller
+
+      - name: Build portable single-file exe
+        run: |
+          python -m PyInstaller --noconfirm `
+            --icon=icons/gaugeIcon.ico `
+            --add-data "icons/gaugeIcon.png;icons" `
+            --add-data "icons/gaugeIcon.ico;icons" `
+            --add-data "tcc_g15_task.xml;." `
+            --add-data "src/Web/templates;Web/templates" `
+            --hidden-import PySide6 `
+            --collect-all winrt `
+            -w -F -y src/tcc-g15.py
+
+      - name: Verify build output
+        run: |
+          if (!(Test-Path dist/tcc-g15.exe)) {
+            Write-Error "dist/tcc-g15.exe was not produced"
+            exit 1
+          }
+          Get-Item dist/tcc-g15.exe | Select-Object Name, Length
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: tcc-g15-windows
+          path: dist/tcc-g15.exe
+          if-no-files-found: error
+
+      - name: Attach to Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/tcc-g15.exe
