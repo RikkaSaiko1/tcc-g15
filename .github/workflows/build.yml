@@ -48,19 +48,14 @@ jobs:
           choco install innosetup --no-progress -y
 
       # ---- Stage 1a: ONEDIR build (source for the installer) ----
-      # NOTE: no -F here. installer-inno-config.iss expects dist/tcc-g15/ to
-      # exist as a directory containing the exe plus all runtime files.
+      # Uses tcc-g15.spec, which prunes Qt binaries the app never uses
+      # (opengl32sw, QML/Quick, Pdf, translations, ...). That cuts the
+      # payload from ~121 MB to ~75 MB, and the installer from ~37 MB
+      # to ~23 MB. The spec also produces dist/tcc-g15/, which
+      # installer-inno-config.iss packs.
       - name: Build ONEDIR (for installer)
         run: |
-          python -m PyInstaller --noconfirm `
-            --icon=icons/gaugeIcon.ico `
-            --add-data "icons/gaugeIcon.png;icons" `
-            --add-data "icons/gaugeIcon.ico;icons" `
-            --add-data "tcc_g15_task.xml;." `
-            --add-data "src/Web/templates;Web/templates" `
-            --hidden-import PySide6 `
-            --collect-all winrt `
-            -w -y src/tcc-g15.py
+          python -m PyInstaller --noconfirm --workpath build --distpath dist tcc-g15.spec
 
       - name: Verify ONEDIR output
         run: |
@@ -69,7 +64,23 @@ jobs:
             Get-ChildItem dist -Recurse -Depth 2 | Select-Object FullName
             exit 1
           }
-          Write-Host "ONEDIR contents:"
+          # Fail loudly if pruning removed something the app needs at runtime.
+          $required = @(
+            "dist/tcc-g15/_internal/PySide6/Qt6Core.dll",
+            "dist/tcc-g15/_internal/PySide6/Qt6Gui.dll",
+            "dist/tcc-g15/_internal/PySide6/Qt6Widgets.dll",
+            "dist/tcc-g15/_internal/PySide6/plugins/platforms/qwindows.dll",
+            "dist/tcc-g15/_internal/Web/templates/index.html",
+            "dist/tcc-g15/_internal/icons/gaugeIcon.ico"
+          )
+          $missing = $required | Where-Object { -not (Test-Path $_) }
+          if ($missing) {
+            Write-Error "Pruning removed required files:`n$($missing -join "`n")"
+            exit 1
+          }
+          $size = (Get-ChildItem dist/tcc-g15 -Recurse -File |
+                   Measure-Object Length -Sum).Sum / 1MB
+          Write-Host ("ONEDIR payload: {0:N2} MB" -f $size)
           Get-ChildItem dist/tcc-g15 | Select-Object Name, Length
 
       # ---- Stage 2: compile the installer ----
@@ -95,26 +106,24 @@ jobs:
           if ($LASTEXITCODE -ne 0) { Write-Error "ISCC failed: $LASTEXITCODE"; exit 1 }
 
       # ---- Stage 1b: portable single-file build ----
-      # Built into a separate dir so it does not disturb dist/tcc-g15/.
+      # Same Qt pruning, collapsed into one exe. Built with its own spec so
+      # it does not disturb dist/tcc-g15/ that the installer just consumed.
       - name: Build portable onefile
         run: |
           python -m PyInstaller --noconfirm `
-            --icon=icons/gaugeIcon.ico `
-            --add-data "icons/gaugeIcon.png;icons" `
-            --add-data "icons/gaugeIcon.ico;icons" `
-            --add-data "tcc_g15_task.xml;." `
-            --add-data "src/Web/templates;Web/templates" `
-            --hidden-import PySide6 `
-            --collect-all winrt `
-            -w -F -y --name tcc-g15-portable src/tcc-g15.py
+            --workpath build-portable `
+            --distpath dist-portable `
+            tcc-g15-portable.spec
 
       - name: Collect artifacts
         run: |
           New-Item -ItemType Directory -Force -Path out | Out-Null
           Copy-Item dist\tcc-g15-installer-*.exe out\ -ErrorAction Stop
-          Copy-Item dist\tcc-g15-portable.exe out\tcc-g15.exe -ErrorAction Stop
+          Copy-Item dist-portable\tcc-g15-portable.exe out\tcc-g15.exe -ErrorAction Stop
           Write-Host "Final artifacts:"
-          Get-ChildItem out | Select-Object Name, Length
+          Get-ChildItem out | ForEach-Object {
+            "{0}  {1:N2} MB" -f $_.Name, ($_.Length / 1MB)
+          }
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4

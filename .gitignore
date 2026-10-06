@@ -1,5 +1,10 @@
 **/__pycache__
 **/.mypy_cache
 dist
+dist-portable
 build
+build-portable
 *.spec
+# ...but our hand-written build specs must be tracked: CI builds from them.
+!tcc-g15.spec
+!tcc-g15-portable.spec
