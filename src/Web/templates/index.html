@@ -224,9 +224,18 @@ function applyLanguage(){
   if(btn)btn.textContent=t('web.lang_btn');
   document.documentElement.lang=(LANG==='zh'?'zh-CN':'en');
   document.title=t('web.title');
-  if(typeof chart!=='undefined'&&chart&&chart.data&&chart.data.datasets){
-    chart.data.datasets[0].label='GPU';chart.data.datasets[1].label='CPU';chart.update();
-  }
+  refreshChartLabels();
+}
+// Kept separate from applyLanguage() on purpose: applyLanguage() runs before
+// the chart exists (the first call happens earlier in this script), and
+// touching a `const` declared later throws ReferenceError even under a
+// `typeof` guard, because the binding is in the temporal dead zone. This
+// function only runs after the chart is built, so it is safe.
+function refreshChartLabels(){
+  if(!chart||!chart.data||!chart.data.datasets)return;
+  chart.data.datasets[0].label='GPU';
+  chart.data.datasets[1].label='CPU';
+  chart.update();
 }
 function toggleLanguage(){
   LANG=(LANG==='zh'?'en':'zh');
@@ -242,14 +251,17 @@ async function dbAdd(ts,gpu,cpu){if(!db)return;const tx=db.transaction(DB_STORE,
 async function dbGetRange(since){if(!db)return[];return new Promise(r=>{const tx=db.transaction(DB_STORE,'readonly');const rq=tx.objectStore(DB_STORE).getAll(IDBKeyRange.lowerBound(since));rq.onsuccess=()=>r(rq.result);rq.onerror=()=>r([])})}
 async function dbClearOld(maxAgeMs){if(!db)return;const cutoff=Date.now()-maxAgeMs;const tx=db.transaction(DB_STORE,'readwrite');const store=tx.objectStore(DB_STORE);const rq=store.openCursor();rq.onsuccess=e=>{const c=e.target.result;if(!c)return;if(c.key<cutoff)c.delete().onsuccess=()=>c.continue();else c.continue()}}
 openDB();
-// Apply the saved language on first paint (defaults to English).
-applyLanguage();
 
 // --- Chart ---
 const ctx=document.getElementById('tempChart').getContext('2d');
 const chartData={labels:[],datasets:[{label:'GPU',data:[],borderColor:'#f44336',backgroundColor:'rgba(244,67,54,.1)',pointRadius:0,borderWidth:2,tension:.3},{label:'CPU',data:[],borderColor:'#ffc107',backgroundColor:'rgba(255,193,7,.1)',pointRadius:0,borderWidth:2,tension:.3}]};
 const chart=new Chart(ctx,{type:'line',data:chartData,options:{responsive:true,maintainAspectRatio:false,animation:{duration:0},scales:{x:{display:true,ticks:{maxTicksLimit:8,color:'#666',font:{size:10}},grid:{color:'#333'}},y:{min:0,max:110,ticks:{color:'#666',font:{size:10}},grid:{color:'#333'}}},plugins:{legend:{labels:{color:'#aaa',font:{size:11}}}}}});
 let chartRange=3600;
+
+// Apply the saved language on first paint (defaults to English).
+// MUST run after `chart` is initialised: applyLanguage() -> refreshChartLabels()
+// touches it, and `chart` is a `const` further down (see refreshChartLabels).
+applyLanguage();
 function setChartRange(s,btn){chartRange=s;document.querySelectorAll('.chart-btn').forEach(b=>b.classList.remove('active'));btn.classList.add('active');updateChart()}
 
 async function updateChart(){
@@ -265,10 +277,18 @@ async function updateChart(){
 let pollCount=0;
 let evtSource=null;
 let statusConnected=false;
+let statusRetryDelay=1000;   // backoff for status stream reconnects (ms)
+let statusRetryTimer=null;
+let procRetryDelay=1000;     // backoff for process stream reconnects (ms)
+let procRetryTimer=null;
 
 function connectStatusStream(){
   if(evtSource)evtSource.close();
   evtSource=new EventSource('/api/status/stream');
+  evtSource.onopen=function(){
+    // A successful (re)connect resets the backoff.
+    statusRetryDelay=1000;
+  };
   evtSource.onmessage=function(e){
     try{
       const d=JSON.parse(e.data);
@@ -283,8 +303,25 @@ function connectStatusStream(){
   evtSource.onerror=function(){
     statusConnected=false;
     document.getElementById('statusDot').className='status-dot off';
-    document.getElementById('statusText').textContent=t("web.disconnected");
+    document.getElementById('statusText').textContent=t("web.disconnected_retry");
+    // EventSource auto-retries on a dropped connection, but gives up for good
+    // when the server answers with a non-200 (e.g. 401 while auth is on, or a
+    // 503 when the SSE semaphore is full). Reconnect ourselves with backoff so
+    // the page recovers without a manual refresh.
+    scheduleStatusReconnect();
   };
+}
+function scheduleStatusReconnect(){
+  if(statusRetryTimer)return;
+  // If the tab is hidden the stream is intentionally closed; don't fight that.
+  if(document.hidden)return;
+  statusRetryTimer=setTimeout(function(){
+    statusRetryTimer=null;
+    if(document.hidden)return;
+    connectStatusStream();
+    // Back off up to 10s to avoid hammering a server that is refusing us.
+    statusRetryDelay=Math.min(statusRetryDelay*2,10000);
+  },statusRetryDelay);
 }
 connectStatusStream();
 
@@ -292,10 +329,14 @@ connectStatusStream();
 document.addEventListener('visibilitychange',function(){
   if(document.hidden){
     // Tab hidden: close SSE connections to free server threads
+    if(statusRetryTimer){clearTimeout(statusRetryTimer);statusRetryTimer=null}
+    if(procRetryTimer){clearTimeout(procRetryTimer);procRetryTimer=null}
     if(evtSource){evtSource.close();evtSource=null}
     if(procEvtSource){procEvtSource.close();procEvtSource=null}
   }else{
     // Tab visible: reconnect streams that should be active
+    statusRetryDelay=1000;
+    procRetryDelay=1000;
     connectStatusStream();
     if(procActiveTab){startProcStream()}
   }
@@ -381,6 +422,7 @@ function startProcStream(){
   const statusEl=document.getElementById('procStatus');
   statusEl.textContent=t("web.connecting");
   procEvtSource=new EventSource('/api/processes/stream?type='+encodeURIComponent(sortBy)+'&num='+encodeURIComponent(num));
+  procEvtSource.onopen=function(){ procRetryDelay=1000; };
   procEvtSource.onmessage=function(e){
     try{
       const data=JSON.parse(e.data);
@@ -391,7 +433,19 @@ function startProcStream(){
   };
   procEvtSource.onerror=function(){
     statusEl.textContent=t("web.disconnected_retry");
+    scheduleProcReconnect();
   };
+}
+
+function scheduleProcReconnect(){
+  if(procRetryTimer)return;
+  if(document.hidden||!procActiveTab)return;
+  procRetryTimer=setTimeout(function(){
+    procRetryTimer=null;
+    if(document.hidden||!procActiveTab)return;
+    startProcStream();
+    procRetryDelay=Math.min(procRetryDelay*2,10000);
+  },procRetryDelay);
 }
 
 function onProcParamChange(){
