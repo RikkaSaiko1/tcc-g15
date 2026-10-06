@@ -81,6 +81,13 @@ jobs:
           $size = (Get-ChildItem dist/tcc-g15 -Recurse -File |
                    Measure-Object Length -Sum).Sum / 1MB
           Write-Host ("ONEDIR payload: {0:N2} MB" -f $size)
+          # A healthy ONEDIR is ~75 MB. Guard against a silently partial tree
+          # (a truncated payload still passes the file-existence checks above
+          # but produces an installer that fails to install).
+          if ($size -lt 55) {
+            Write-Error ("ONEDIR payload is only {0:N2} MB, expected ~75 MB. Aborting." -f $size)
+            exit 1
+          }
           Get-ChildItem dist/tcc-g15 | Select-Object Name, Length
 
       # ---- Stage 2: compile the installer ----
@@ -102,8 +109,50 @@ jobs:
           }
           if (-not $iscc) { Write-Error "ISCC.exe not found"; exit 1 }
           Write-Host "Using $iscc"
+          # Remove any stale installer first, so a failed compile cannot leave
+          # a previous (possibly broken) file behind to be published.
+          Remove-Item dist\tcc-g15-installer-*.exe -Force -ErrorAction SilentlyContinue
           & $iscc "installer-inno-config.iss"
           if ($LASTEXITCODE -ne 0) { Write-Error "ISCC failed: $LASTEXITCODE"; exit 1 }
+
+          # Sanity-check the installer: it must exist and be a plausible size
+          # (~23 MB). A truncated setup exe still looks like a valid file but
+          # aborts with exit code 1 when run, which shipped a broken release
+          # once already.
+          $setup = Get-ChildItem dist\tcc-g15-installer-*.exe -ErrorAction SilentlyContinue |
+                   Select-Object -First 1
+          if (-not $setup) { Write-Error "Installer was not produced"; exit 1 }
+          $mb = $setup.Length / 1MB
+          Write-Host ("Installer: {0} ({1:N2} MB)" -f $setup.Name, $mb)
+          if ($mb -lt 15) {
+            Write-Error ("Installer is only {0:N2} MB, expected ~23 MB. It is truncated." -f $mb)
+            exit 1
+          }
+
+      # Prove the installer actually works before publishing it. This catches
+      # the "valid-looking but broken" case that size checks alone can miss.
+      - name: Smoke-test the installer
+        run: |
+          $setup = (Get-ChildItem dist\tcc-g15-installer-*.exe | Select-Object -First 1).FullName
+          $target = Join-Path $env:RUNNER_TEMP "install-smoke"
+          $proc = Start-Process -FilePath $setup `
+            -ArgumentList "/VERYSILENT","/SUPPRESSMSGBOXES","/NORESTART","/DIR=`"$target`"" `
+            -PassThru -Wait
+          if ($proc.ExitCode -ne 0) {
+            Write-Error "Installer exited with $($proc.ExitCode) — it is not usable"
+            exit 1
+          }
+          $exe = Join-Path $target "tcc-g15.exe"
+          if (-not (Test-Path $exe)) { Write-Error "Installed exe missing at $exe"; exit 1 }
+          $count = (Get-ChildItem $target -Recurse -File).Count
+          $mb = (Get-ChildItem $target -Recurse -File |
+                 Measure-Object Length -Sum).Sum / 1MB
+          Write-Host ("Installed OK: {0} files, {1:N2} MB" -f $count, $mb)
+          if ($mb -lt 55) {
+            Write-Error ("Installed payload is only {0:N2} MB, expected ~80 MB" -f $mb)
+            exit 1
+          }
+          Remove-Item $target -Recurse -Force -ErrorAction SilentlyContinue
 
       # ---- Stage 1b: portable single-file build ----
       # Same Qt pruning, collapsed into one exe. Built with its own spec so
