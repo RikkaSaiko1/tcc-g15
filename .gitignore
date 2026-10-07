@@ -2,8 +2,11 @@
 **/.mypy_cache
 dist
 dist-portable
+dist-appdir
 build
 build-portable
+build-appdir
+.venv
 *.spec
 # ...but our hand-written build specs must be tracked: CI builds from them.
 !tcc-g15.spec
