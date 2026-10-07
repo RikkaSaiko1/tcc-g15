@@ -47,6 +47,17 @@ _EXCLUDE_PATTERNS = [
     'Qt6Concurrent*.dll',
     'Qt63D*.dll',
     'Qt6Graphs*.dll',
+    # Confirmed unused by grep over src/ (0 references): the app talks to WMI
+    # and serves plain HTTP, so it needs neither Qt networking nor OpenGL/SVG
+    # rendering; urllib handles the optional webhook POSTs.
+    'Qt6Network*.dll',
+    'Qt6OpenGL*.dll',
+    'Qt6OpenGLWidgets*.dll',
+    'Qt6Svg*.dll',
+    'Qt6SvgWidgets*.dll',
+    'Qt6PrintSupport*.dll',
+    'Qt6Xml*.dll',
+    'Qt6DBus*.dll',
 ]
 
 # Qt plugin subdirectories to drop wholesale. `platforms`, `styles`,
@@ -72,6 +83,23 @@ _EXCLUDE_PLUGIN_DIRS = [
     'tls',
 ]
 
+# Individual plugins dropped by exact filename. The `platforms` directory must
+# keep qwindows.dll (the real Windows backend); the others there are either
+# fallbacks used only when explicitly requested (qminimal, qoffscreen) or an
+# alternative renderer the app gains nothing from (qdirect2d).
+_EXCLUDE_PLUGIN_FILES = [
+    'qdirect2d.dll',
+    'qminimald.dll',
+    'qoffscreend.dll',
+    'qsvgicon.dll',      # SVG icon engine — app uses .ico/.png
+    'qpdf.dll',
+    'qtga.dll',          # only png/ico/jpeg are used
+    'qwbmp.dll',
+    'qicns.dll',
+    'qtiff.dll',
+    'qgif.dll',
+]
+
 
 def _is_excluded(dest):
     """Return True if this destination path should be dropped."""
@@ -90,6 +118,9 @@ def _is_excluded(dest):
     for sub in _EXCLUDE_PLUGIN_DIRS:
         if f'/{sub}/' in d.lower():
             return True
+
+    if name.lower() in _EXCLUDE_PLUGIN_FILES:
+        return True
 
     return False
 

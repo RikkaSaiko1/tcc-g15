@@ -43,6 +43,17 @@ _EXCLUDE_PATTERNS = [
     'Qt6Concurrent*.dll',
     'Qt63D*.dll',
     'Qt6Graphs*.dll',
+    # Confirmed unused by grep over src/ (0 references): the app talks to WMI
+    # and serves plain HTTP, so it needs neither Qt networking nor OpenGL/SVG
+    # rendering; urllib handles the optional webhook POSTs.
+    'Qt6Network*.dll',
+    'Qt6OpenGL*.dll',
+    'Qt6OpenGLWidgets*.dll',
+    'Qt6Svg*.dll',
+    'Qt6SvgWidgets*.dll',
+    'Qt6PrintSupport*.dll',
+    'Qt6Xml*.dll',
+    'Qt6DBus*.dll',
 ]
 
 _EXCLUDE_PLUGIN_DIRS = [
@@ -52,6 +63,19 @@ _EXCLUDE_PLUGIN_DIRS = [
     'virtualkeyboard', 'renderers', 'networkinformation', 'tls',
 ]
 
+
+_EXCLUDE_PLUGIN_FILES = [
+    'qdirect2d.dll',
+    'qminimald.dll',
+    'qoffscreend.dll',
+    'qsvgicon.dll',      # SVG icon engine — app uses .ico/.png
+    'qpdf.dll',
+    'qtga.dll',          # only png/ico/jpeg are used
+    'qwbmp.dll',
+    'qicns.dll',
+    'qtiff.dll',
+    'qgif.dll',
+]
 
 def _is_excluded(dest):
     d = dest.replace('\\', '/')

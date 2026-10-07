@@ -2,9 +2,9 @@
 REM ===========================================================================
 REM  tcc-g15 - release build
 REM
-REM  Produces, in .\dist :
-REM    tcc-g15-installer-<version>.exe   Windows installer (needs Inno Setup)
-REM    tcc-g15.exe                       portable single file
+REM  Produces, in .\ :
+REM    dist\tcc-g15-installer-<version>.exe   Windows installer
+REM    tcc-g15-portable.zip                   no-install build (unzip and run)
 REM
 REM  Usage:  make-release.bat
 REM
@@ -90,17 +90,26 @@ echo.
 echo --- Compiling installer ---
 "!ISCC!" installer-inno-config.iss || exit /b 1
 
-REM --- Stage 3: portable single file ---------------------------------------
+REM --- Stage 3: portable zip -----------------------------------------------
+REM The ONEDIR tree above is reused as-is: a folder build is smaller than a
+REM one-file exe and starts faster, since it never unpacks to %TEMP%.
+REM The archive is written to the repo root, NOT into dist/ - archiving a
+REM directory while writing the archive into it makes the file grow forever.
 echo.
-echo --- Building portable exe ---
-%PY% -m PyInstaller --noconfirm --clean ^
-  --workpath build-portable --distpath dist-portable tcc-g15-portable.spec || exit /b 1
+echo --- Packing portable zip ---
+set "ZIPFILE=tcc-g15-portable.zip"
+if exist "%ZIPFILE%" del /q "%ZIPFILE%"
+%PY% -c "import shutil; shutil.make_archive(r'tcc-g15-portable','zip',r'dist',r'tcc-g15')" || exit /b 1
+if not exist "%ZIPFILE%" (
+  echo [ERROR] zip was not created.
+  exit /b 1
+)
 
 echo.
 echo ===========================================================
-echo  Done. Output in: %CD%\dist
+echo  Done.
 echo ===========================================================
-dir /b "dist\tcc-g15-installer-*.exe" "dist-portable\tcc-g15-portable.exe" 2>nul
+dir /b "dist\tcc-g15-installer-*.exe" "%ZIPFILE%" 2>nul
 echo.
 echo Reminder: the app must be run as Administrator (it talks to WMI).
 exit /b 0

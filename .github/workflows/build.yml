@@ -155,18 +155,9 @@ jobs:
           Remove-Item $target -Recurse -Force -ErrorAction SilentlyContinue
 
       # ---- Stage 1b: portable single-file build ----
-      # Same Qt pruning, collapsed into one exe. Built with its own spec so
-      # it does not disturb dist/tcc-g15/ that the installer just consumed.
-      - name: Build portable onefile
-        run: |
-          python -m PyInstaller --noconfirm `
-            --workpath build-portable `
-            --distpath dist-portable `
-            tcc-g15-portable.spec
-
       # Zip the ONEDIR tree that was already built for the installer — no
-      # extra PyInstaller run needed. A zipped folder build is preferable to
-      # the single-file exe for handing around: it is smaller (the onefile
+      # extra PyInstaller run needed. A zipped folder build is the better
+      # "no install" artifact: it is smaller than a one-file exe (which
       # carries a second copy of the runtime) and starts faster, because it
       # does not unpack itself to %TEMP% on every launch.
       # Python's zipfile does the packing, so no 7-Zip/WinRAR is required.
@@ -188,7 +179,7 @@ jobs:
           if (!(Test-Path "$zipBase.zip")) { Write-Error "zip was not created"; exit 1 }
           $mb = (Get-Item "$zipBase.zip").Length / 1MB
           if ($mb -gt 60) {
-            Write-Error ("zip is {0:N1} MB, far larger than the expected ~30 MB — likely self-inclusion" -f $mb)
+            Write-Error ("zip is {0:N1} MB, far larger than the expected ~28 MB — likely self-inclusion" -f $mb)
             exit 1
           }
           Write-Host ("portable zip: {0:N2} MB" -f $mb)
@@ -197,7 +188,6 @@ jobs:
         run: |
           New-Item -ItemType Directory -Force -Path out | Out-Null
           Copy-Item dist\tcc-g15-installer-*.exe out\ -ErrorAction Stop
-          Copy-Item dist-portable\tcc-g15-portable.exe out\tcc-g15.exe -ErrorAction Stop
           Copy-Item tcc-g15-portable.zip out\tcc-g15-portable.zip -ErrorAction Stop
           Write-Host "Final artifacts:"
           Get-ChildItem out | ForEach-Object {
