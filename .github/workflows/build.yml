@@ -164,11 +164,41 @@ jobs:
             --distpath dist-portable `
             tcc-g15-portable.spec
 
+      # Zip the ONEDIR tree that was already built for the installer — no
+      # extra PyInstaller run needed. A zipped folder build is preferable to
+      # the single-file exe for handing around: it is smaller (the onefile
+      # carries a second copy of the runtime) and starts faster, because it
+      # does not unpack itself to %TEMP% on every launch.
+      # Python's zipfile does the packing, so no 7-Zip/WinRAR is required.
+      #
+      # The archive is written to the repo root, NOT into dist/: writing it
+      # inside the tree being archived makes make_archive pack its own output
+      # and the file grows without bound.
+      - name: Pack portable zip
+        run: |
+          if (!(Test-Path "dist/tcc-g15/tcc-g15.exe")) {
+            Write-Error "dist/tcc-g15/tcc-g15.exe missing; cannot pack zip"
+            exit 1
+          }
+          $zipBase = "tcc-g15-portable"
+          Remove-Item "$zipBase.zip" -Force -ErrorAction SilentlyContinue
+          # root_dir='dist' puts the folder "tcc-g15" at the archive root, so
+          # extracting yields tcc-g15/tcc-g15.exe rather than a loose pile.
+          python -c "import shutil; shutil.make_archive(r'$zipBase', 'zip', r'dist', r'tcc-g15')"
+          if (!(Test-Path "$zipBase.zip")) { Write-Error "zip was not created"; exit 1 }
+          $mb = (Get-Item "$zipBase.zip").Length / 1MB
+          if ($mb -gt 60) {
+            Write-Error ("zip is {0:N1} MB, far larger than the expected ~30 MB — likely self-inclusion" -f $mb)
+            exit 1
+          }
+          Write-Host ("portable zip: {0:N2} MB" -f $mb)
+
       - name: Collect artifacts
         run: |
           New-Item -ItemType Directory -Force -Path out | Out-Null
           Copy-Item dist\tcc-g15-installer-*.exe out\ -ErrorAction Stop
           Copy-Item dist-portable\tcc-g15-portable.exe out\tcc-g15.exe -ErrorAction Stop
+          Copy-Item tcc-g15-portable.zip out\tcc-g15-portable.zip -ErrorAction Stop
           Write-Host "Final artifacts:"
           Get-ChildItem out | ForEach-Object {
             "{0}  {1:N2} MB" -f $_.Name, ($_.Length / 1MB)
