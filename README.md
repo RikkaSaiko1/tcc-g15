@@ -2,10 +2,6 @@
 
 Open-source alternative to AWCC*
 
-> **Fork notice.** This is a fork of [AlexIII/tcc-g15](https://github.com/AlexIII/tcc-g15)
-> with a web dashboard, an admin panel, English/Chinese UI and some bug fixes.
-> Releases here: **https://github.com/RikkaSaiko1/tcc-g15/releases**
-
 [Download link](https://github.com/RikkaSaiko1/tcc-g15/releases) *(Note: the app requires administrator privileges)*
 
 <img src="./screen-1.png" alt="Screenshot 1" width="600" />
@@ -90,41 +86,6 @@ python3 -m pip install -r ./requirements.txt
 python3 src\tcc-g15.py
 ```
 
-## Building and releasing
-
-Build locally with `make-release.bat`. It locates Python and Inno Setup,
-installs anything missing, and writes two artifacts:
-
-| Artifact | Notes |
-| --- | --- |
-| `dist\tcc-g15-installer-<version>.exe` | Windows installer (needs Inno Setup) |
-| `tcc-g15-portable.zip` | No-install build; unzip and run |
-
-**Verify before releasing.** Building successfully says nothing about whether
-the app runs, so run:
-
-```powershell
-.\verify-release.ps1
-```
-
-It installs the installer to a temporary directory, launches it, and checks
-the things that have actually broken before: that the app starts, that its
-settings still resolve to the expected store, that the web dashboard answers
-`/api/status` with real readings, and that the page links to this fork. The
-portable zip is extracted and launched the same way. Nothing outside `%TEMP%`
-is touched and the test install is removed afterwards.
-
-It prints `RESULT: PASS (n/n checks)` or fails with the specific checks that
-broke. **Only tag a release once it passes.**
-
-Cutting a release is then just a tag — CI derives the version from it and
-publishes both artifacts:
-
-```
-git tag v1.6.7
-git push origin v1.6.7
-```
-
 ## About the AWCC Telemetry
 
 I know it's probably not going to surprise anyone, given the times we're living in, 
@@ -177,8 +138,6 @@ Big thanks to the amazing people who have contributed to the project:
 
 ## License
 
-© github.com/AlexIII — original work and project design.
-
-Fork maintained at github.com/RikkaSaiko1/tcc-g15
+© github.com/AlexIII
 
 GPL v3
