@@ -89,14 +89,18 @@ function Read-PythonSetting {
     return $Default
 }
 
-# Run a helper elevated and wait for it. Needed because the app reads WMI,
-# which denies access to a non-elevated process (OLE error 0x80041003) and the
-# app then exits before starting its web server.
+# Launch a helper and wait for it.
+#
+# The test needs elevation because the app reads WMI, which denies access to a
+# Medium-integrity process (OLE error 0x80041003) and the app exits before it
+# starts its web server. Rather than firing a UAC prompt mid-run, the script
+# requires the caller to be elevated up front (see the check in the main body);
+# by the time this runs, no further prompt is needed.
 #
 # The launcher is chosen from the file extension: PowerShell's -File only
-# executes .ps1, and quietly does nothing when handed a .bat, which would let
+# executes .ps1, and quietly does nothing when handed a .bat, which would make
 # every launch-dependent check fail for the wrong reason.
-function Invoke-Elevated {
+function Invoke-Helper {
     param([string]$ScriptPath, [int]$TimeoutSec = 120)
     $ext = [System.IO.Path]::GetExtension($ScriptPath).ToLowerInvariant()
     $psi = New-Object System.Diagnostics.ProcessStartInfo
@@ -107,9 +111,8 @@ function Invoke-Elevated {
         $psi.FileName = 'cmd.exe'
         $psi.Arguments = "/c `"$ScriptPath`""
     }
-    $psi.UseShellExecute = $true
-    $psi.Verb = 'runas'
-    $psi.WindowStyle = 'Minimized'
+    $psi.UseShellExecute = $false
+    $psi.WindowStyle = 'Hidden'
     $p = [System.Diagnostics.Process]::Start($psi)
     if (-not $p.WaitForExit($TimeoutSec * 1000)) {
         try { $p.Kill() } catch {}
@@ -125,7 +128,7 @@ function Stop-TestProcesses {
 taskkill /F /IM tcc-g15.exe 2>$null | Out-Null
 Start-Sleep -Milliseconds 800
 '@ | Set-Content -Path $killer -Encoding UTF8
-    Invoke-Elevated -ScriptPath $killer -TimeoutSec 30 | Out-Null
+    Invoke-Helper -ScriptPath $killer -TimeoutSec 30 | Out-Null
     Start-Sleep -Seconds 1
     # Stale lock files are keyed by exe path and would otherwise accumulate.
     Get-ChildItem $env:TEMP -Filter '*tcc-g15*.lock' -ErrorAction SilentlyContinue |
@@ -179,7 +182,7 @@ print('SEEDED')
 cd /d "$ExeDir"
 tcc-g15.exe > NUL 2>&1
 "@ | Set-Content -Path $runner -Encoding ASCII
-    Invoke-Elevated -ScriptPath $runner -TimeoutSec 10 | Out-Null
+    Invoke-Helper -ScriptPath $runner -TimeoutSec 10 | Out-Null
     Start-Sleep -Seconds 26
     Stop-TestProcesses
 
@@ -255,6 +258,38 @@ for org in ['github.com/AlexIII/tcc-g15', 'github.com/RikkaSaiko1/tcc-g15']:
 Write-Host ''
 Write-Host '=== tcc-g15 release verification ===' -ForegroundColor Cyan
 
+# Refuse to run unless already elevated. The app needs WMI, which denies access
+# to a Medium-integrity process, so every launch check would fail for the wrong
+# reason. Checking here means the whole run is prompt-free, instead of firing
+# UAC partway through (which also stalls unattended runs).
+$identity  = [Security.Principal.WindowsIdentity]::GetCurrent()
+$principal = New-Object Security.Principal.WindowsPrincipal($identity)
+$isAdmin   = $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+
+if (-not $isAdmin) {
+    Write-Host ''
+    Write-Host 'This script must run elevated.' -ForegroundColor Yellow
+    Write-Host ''
+    Write-Host '  Why: the app reads WMI, and Windows denies that to a' -ForegroundColor Gray
+    Write-Host '  non-elevated (~Medium integrity) process. Without elevation the' -ForegroundColor Gray
+    Write-Host '  app exits immediately and every check fails for the wrong reason.' -ForegroundColor Gray
+    Write-Host ''
+    Write-Host '  How: open PowerShell as Administrator, then run it again:' -ForegroundColor Gray
+    Write-Host ''
+    Write-Host '      Start-Process powershell -Verb RunAs' -ForegroundColor White
+    Write-Host '      cd "<repo>"' -ForegroundColor White
+    Write-Host '      .\verify-release.ps1' -ForegroundColor White
+    Write-Host ''
+    Write-Host '  Or right-click the terminal and choose "Run as administrator".' -ForegroundColor Gray
+    Write-Host ''
+    Write-Host ("  current user      : {0}" -f $identity.Name)
+    Write-Host ("  elevation         : not elevated (IntegrityLevel=Medium)") -ForegroundColor DarkGray
+    Write-Host ''
+    exit 2
+}
+
+Write-Host ("  running elevated as: {0}" -f $identity.Name) -ForegroundColor DarkGray
+
 if (-not $Installer) {
     $Installer = Get-ChildItem (Join-Path $repoRoot 'dist') -Filter 'tcc-g15-installer-*.exe' -ErrorAction SilentlyContinue |
                  Sort-Object LastWriteTime -Descending | Select-Object -First 1 -ExpandProperty FullName
@@ -266,6 +301,31 @@ if (-not $SkipZip -and -not $Zip) {
 $appGui = Join-Path $repoRoot 'src\GUI\AppGUI.py'
 if (-not $ExpectedVersion)     { $ExpectedVersion     = Read-PythonSetting -File $appGui -Name 'APP_VERSION'  -Default '' }
 if (-not $ExpectedSettingsOrg) { $ExpectedSettingsOrg = Read-PythonSetting -File $appGui -Name 'SETTINGS_ORG' -Default '' }
+
+# Hard invariant, independent of the working copy.
+#
+# SETTINGS_ORG must stay on the ORIGINAL scope: it is where every existing
+# user's preferences live, so changing it silently resets them. Deriving the
+# expectation from AppGUI.py alone would not catch a bad edit, because the
+# edit changes both the artifact and the expectation - the check would compare
+# the broken value against itself and pass.
+$SETTINGS_ORG_MUST_BE = 'github.com/AlexIII/tcc-g15'
+$settingsGuardFailed = ($ExpectedSettingsOrg -ne $SETTINGS_ORG_MUST_BE)
+if ($settingsGuardFailed) {
+    Write-Host ''
+    Write-Host 'Refusing to verify: SETTINGS_ORG has moved.' -ForegroundColor Red
+    Write-Host ''
+    Write-Host ("  src\GUI\AppGUI.py declares : {0}" -f $ExpectedSettingsOrg) -ForegroundColor Gray
+    Write-Host ("  required                  : {0}" -f $SETTINGS_ORG_MUST_BE) -ForegroundColor Gray
+    Write-Host ''
+    Write-Host '  SETTINGS_ORG is a storage location, not a display string. Changing' -ForegroundColor Gray
+    Write-Host '  it orphans every saved preference: the web server stops' -ForegroundColor Gray
+    Write-Host '  auto-starting, the language resets, fan and threshold settings' -ForegroundColor Gray
+    Write-Host '  revert to defaults. Keep APP_URL for links and SETTINGS_ORG for' -ForegroundColor Gray
+    Write-Host '  storage.' -ForegroundColor Gray
+    Write-Host ''
+    exit 1
+}
 
 Write-Host ("  installer          : {0}" -f ($(if ($Installer) { $Installer } else { '<not found>' })))
 Write-Host ("  zip                : {0}" -f ($(if ($SkipZip) { '<skipped>' } elseif ($Zip) { $Zip } else { '<not found>' })))
@@ -326,15 +386,16 @@ try {
     if (Test-Path $installedExe) {
         $log = Join-Path $tempRoot 'installed.log'
         $runner = Join-Path $tempRoot 'run-installed.bat'
-        # Redirect via cmd: the app is a GUI binary, and Start-Process -Verb runas
-        # cannot capture its stdout.
+        # Launch through cmd so the working directory is right. The app is
+        # windowed (console=False) so its own output goes nowhere, but the
+        # redirection is kept for the cases where it does write.
         @"
 @echo off
 cd /d "$installDir"
 tcc-g15.exe > "$log" 2>&1
 "@ | Set-Content -Path $runner -Encoding ASCII
 
-        Invoke-Elevated -ScriptPath $runner -TimeoutSec 10 | Out-Null
+        Invoke-Helper -ScriptPath $runner -TimeoutSec 10 | Out-Null
         Start-Sleep -Seconds 28
 
         $alive = (Get-Process tcc-g15 -ErrorAction SilentlyContinue | Measure-Object).Count -gt 0
@@ -423,7 +484,7 @@ cd /d "$zipDir\tcc-g15"
 tcc-g15.exe > "$log2" 2>&1
 "@ | Set-Content -Path $runner2 -Encoding ASCII
 
-                Invoke-Elevated -ScriptPath $runner2 -TimeoutSec 10 | Out-Null
+                Invoke-Helper -ScriptPath $runner2 -TimeoutSec 10 | Out-Null
                 Start-Sleep -Seconds 28
 
                 $logText2 = if (Test-Path $log2) { Get-Content $log2 -Raw -Encoding UTF8 } else { '' }
