@@ -109,10 +109,25 @@ jobs:
           }
           if (-not $iscc) { Write-Error "ISCC.exe not found"; exit 1 }
           Write-Host "Using $iscc"
+
+          # Version comes from the tag (v1.6.6 -> 1.6.6), so releasing a new
+          # version means pushing a tag — nothing in the repo hard-codes it.
+          # On a manual run there is no tag, so fall back to the value in
+          # installer-inno-config.iss.
+          $ver = ""
+          if ("${{ github.ref }}" -like "refs/tags/*") {
+            $ver = "${{ github.ref_name }}".TrimStart("v")
+          }
+          Write-Host "Installer version: $(if ($ver) { $ver } else { '(from .iss default)' })"
+
           # Remove any stale installer first, so a failed compile cannot leave
           # a previous (possibly broken) file behind to be published.
           Remove-Item dist\tcc-g15-installer-*.exe -Force -ErrorAction SilentlyContinue
-          & $iscc "installer-inno-config.iss"
+          if ($ver) {
+            & $iscc "/DMyAppVersion=$ver" "installer-inno-config.iss"
+          } else {
+            & $iscc "installer-inno-config.iss"
+          }
           if ($LASTEXITCODE -ne 0) { Write-Error "ISCC failed: $LASTEXITCODE"; exit 1 }
 
           # Sanity-check the installer: it must exist and be a plausible size

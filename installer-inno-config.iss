@@ -2,9 +2,13 @@
 ; SEE THE DOCUMENTATION FOR DETAILS ON CREATING INNO SETUP SCRIPT FILES!
 
 #define MyAppName "Thermal Control Center"
-#define MyAppVersion "1.6.5"
-#define MyAppPublisher "AlexIII"
-#define MyAppURL "https://github.com/AlexIII/tcc-g15"
+; Version comes from the build (see .github/workflows/build.yml, which passes
+; /DMyAppVersion=<tag>); the fallback is only used for a manual local build.
+#ifndef MyAppVersion
+  #define MyAppVersion "1.6.6"
+#endif
+#define MyAppPublisher "RikkaSaiko1"
+#define MyAppURL "https://github.com/RikkaSaiko1/tcc-g15"
 #define MyAppExeName "tcc-g15.exe"
 
 [Setup]

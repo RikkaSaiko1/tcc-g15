@@ -2,7 +2,11 @@
 
 Open-source alternative to AWCC*
 
-[Download link](https://github.com/AlexIII/tcc-g15/releases) *(Note: the app requires administrator privileges)*
+> **Fork notice.** This is a fork of [AlexIII/tcc-g15](https://github.com/AlexIII/tcc-g15)
+> with a web dashboard, an admin panel, English/Chinese UI and some bug fixes.
+> Releases here: **https://github.com/RikkaSaiko1/tcc-g15/releases**
+
+[Download link](https://github.com/RikkaSaiko1/tcc-g15/releases) *(Note: the app requires administrator privileges)*
 
 <img src="./screen-1.png" alt="Screenshot 1" width="600" />
 
@@ -12,7 +16,7 @@ Open-source alternative to AWCC*
 
 > Liked the app? Glad you did! 😸 Help by spreading the word 🚀 and leaving the project a star ⭐
 
-> Didn't work out for you? Please report the problem by creating an [issue](https://github.com/AlexIII/tcc-g15/issues). Feedback is always welcome!
+> Didn't work out for you? Please report the problem by creating an [issue](https://github.com/RikkaSaiko1/tcc-g15/issues). Feedback is always welcome!
 
 **AWCC - "Alienware Control Center" is an app for thermal control that Dell ships with their G-series notebooks.*
 
@@ -55,8 +59,8 @@ Please report if it worked / didn't work for you. Your feedback is highly apprec
 
 - Requires admin system privileges (to access WMI interface)
 - Manual fan control is not *really* manual. If you set fan speed too low, the BIOS will take over and raise the fan speed automatically when the GPU/CPU temperature reaches a certain point to prevent overheating.
-- **"Autorun on startup" feature may not work for you.** The autorun adds a task to the Windows Task Scheduler that should start the app on first sign-in after a reboot, but it may fail to run the app due to the system's security policy. You can try other approaches to make the app autostart on your system. [Check out this issue.](https://github.com/AlexIII/tcc-g15/issues/7)
-- On rare occasions, the driver may report bogus GPU temperature. [See this issue.](https://github.com/AlexIII/tcc-g15/issues/9)
+- **"Autorun on startup" feature may not work for you.** The autorun adds a task to the Windows Task Scheduler that should start the app on first sign-in after a reboot, but it may fail to run the app due to the system's security policy. You can try other approaches to make the app autostart on your system. [Check out this issue.](https://github.com/RikkaSaiko1/tcc-g15/issues/7)
+- On rare occasions, the driver may report bogus GPU temperature. [See this issue.](https://github.com/RikkaSaiko1/tcc-g15/issues/9)
 - Switching the thermal mode to "G-mode" and back **may result in a second-long system-wide freeze** (at the exact moment when the switch is happening). This is a known issue with Dell's thermal control interface. Cannot be fixed. Make sure to disable the fail-safe feature if you don't want the app to switch the thermal mode automatically.
 
 ## Why AWCC is BAD
@@ -138,6 +142,8 @@ Big thanks to the amazing people who have contributed to the project:
 
 ## License
 
-© github.com/AlexIII
+© github.com/AlexIII — original work and project design.
+
+Fork maintained at github.com/RikkaSaiko1/tcc-g15
 
 GPL v3

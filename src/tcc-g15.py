@@ -1,4 +1,5 @@
-# (c) github.com/AlexIII
+# Original work (c) github.com/AlexIII
+# Fork maintained at github.com/RikkaSaiko1/tcc-g15
 # GPLv3
 
 import sys

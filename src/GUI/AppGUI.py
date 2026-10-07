@@ -108,9 +108,11 @@ class TCC_GUI(QtWidgets.QWidget):
     FAILSAFE_TRIGGER_DELAY_SEC = 8
     FAILSAFE_RESET_AFTER_TEMP_IS_OK_FOR_SEC = 60
     APP_NAME = "Thermal Control Center for Dell G15"
-    APP_VERSION = "1.6.5"
+    # Kept in step with the release tag by hand; the Windows installer gets its
+    # version from the tag itself (see .github/workflows/build.yml).
+    APP_VERSION = "1.6.6"
     APP_DESCRIPTION = "This app is an open-source replacement for Alienware Control Center "
-    APP_URL = "github.com/AlexIII/tcc-g15"
+    APP_URL = "github.com/RikkaSaiko1/tcc-g15"
 
     # Green to Yellow and Yellow to Red thresholds
     GPU_COLOR_LIMITS = (72, 85)
