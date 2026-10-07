@@ -112,7 +112,15 @@ class TCC_GUI(QtWidgets.QWidget):
     # version from the tag itself (see .github/workflows/build.yml).
     APP_VERSION = "1.6.6"
     APP_DESCRIPTION = "This app is an open-source replacement for Alienware Control Center "
+    # Shown in the About dialog.
     APP_URL = "github.com/RikkaSaiko1/tcc-g15"
+
+    # QSettings scope. This is deliberately NOT APP_URL: it is the storage
+    # location, so changing it silently orphans every saved setting (the web
+    # server stops auto-starting, the language resets, fan thresholds go back
+    # to defaults). It keeps the upstream value so settings written by earlier
+    # versions — and by the original app — are still picked up.
+    SETTINGS_ORG = "github.com/AlexIII/tcc-g15"
 
     # Green to Yellow and Yellow to Red thresholds
     GPU_COLOR_LIMITS = (72, 85)
@@ -160,8 +168,9 @@ class TCC_GUI(QtWidgets.QWidget):
         self._webhookAlertCount = 0
         self._webhookLock = threading.Lock()
 
-        self.settings = QtCore.QSettings(self.APP_URL, "AWCC")
+        self.settings = QtCore.QSettings(self.SETTINGS_ORG, "AWCC")
         print(f'Settings location: {self.settings.fileName()}')
+        self._migrateSettings()
 
         # Apply the persisted language BEFORE any widget text is created, so
         # the whole first paint is already in the right language.
@@ -836,6 +845,30 @@ class TCC_GUI(QtWidgets.QWidget):
             self._webhookAction.setText(tr("menu.webhook_enabled"))
         else:
             self._webhookAction.setText(tr("menu.webhook_disabled"))
+
+    def _migrateSettings(self):
+        """Adopt settings left behind by a differently-scoped build.
+
+        A brief fork build used this fork's URL as the QSettings org, which
+        moved the whole settings store and reset every preference. If the
+        current scope is empty but that one has data, copy it across so those
+        users get their configuration back.
+        """
+        if self.settings.allKeys():
+            return  # already populated; nothing to do
+
+        legacy_org = "github.com/RikkaSaiko1/tcc-g15"
+        if legacy_org == self.SETTINGS_ORG:
+            return
+        legacy = QtCore.QSettings(legacy_org, "AWCC")
+        legacy_keys = legacy.allKeys()
+        if not legacy_keys:
+            return
+
+        for key in legacy_keys:
+            self.settings.setValue(key, legacy.value(key))
+        self.settings.sync()
+        print(f"Migrated {len(legacy_keys)} settings from {legacy_org}")
 
     def _saveAppSettings(self):
         curValues = [
